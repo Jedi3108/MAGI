@@ -136,3 +136,25 @@ class TestJsonRobustness(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestQuestionSafety(unittest.TestCase):
+    def test_member_cannot_ask_itself(self):
+        member = COUNCIL[1]
+
+        raw = """
+        {
+          "vote": "NEGATIVE",
+          "confidence": 70,
+          "core_reason": "Risk remains high.",
+          "main_risk": "Self-questioning would waste a protocol slot.",
+          "question_for": "BALTHASAR",
+          "question": "BALTHASAR, why do you think this?",
+          "can_change_mind_if": "Better protocol validation exists."
+        }
+        """
+
+        verdict = parse_verdict(member=member, raw=raw, model="test")
+
+        self.assertEqual(verdict.question_for, "NO QUESTIONS")
+        self.assertEqual(verdict.question, "NO QUESTIONS")

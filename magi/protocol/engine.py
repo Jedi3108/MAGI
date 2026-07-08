@@ -36,19 +36,42 @@ DEFAULT_MODEL = "llama3.2"
 
 
 JUDGE_INSTRUCTION = """
-Evaluate the proposition strictly through your council identity.
+You are taking part in Round 1 of the MAGI deliberation protocol: Independent Analysis.
 
-Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
+Evaluate the proposition strictly through your own council identity.
+
+Do not imitate the other council members.
+Do not give a generic assistant answer.
+Do not force consensus.
+Disagreement is allowed.
+A minority position is valuable if it exposes a real concern.
+
+Use your facet to produce a concrete judgment:
+- MELCHIOR cares about evidence, truth, uncertainty, and technical correctness.
+- BALTHASAR cares about safety, harm, care, stability, and sustainability.
+- CASPER cares about individuality, dignity, desire, aesthetics, and suppressed perspectives.
+- ARTABAN cares about action, duty, execution, accountability, and consequences.
+
+Confidence calibration:
+- 50 means genuinely uncertain.
+- 60 means weak lean.
+- 70 means clear but revisable position.
+- 80 means strong position with some uncertainty.
+- 90+ should be rare and requires unusually strong justification.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
   "vote": "AFFIRMATIVE" | "NEGATIVE",
   "confidence": 0-100,
-  "core_reason": "one or two sentences",
-  "main_risk": "one sentence",
+  "core_reason": "one concrete reason, written in your council voice",
+  "main_risk": "one concrete failure mode or danger",
   "question_for": "MELCHIOR" | "BALTHASAR" | "CASPER" | "ARTABAN" | "NO QUESTIONS",
-  "question": "one important question, or NO QUESTIONS",
-  "can_change_mind_if": "what evidence or argument could change your vote"
+  "question": "one sharp question to another member, or NO QUESTIONS",
+  "can_change_mind_if": "specific evidence, condition, or argument that could change your vote"
 }}
 
 Proposition:
@@ -69,13 +92,22 @@ A question was addressed to you by {asker_name}:
 
 {question}
 
-Answer the question directly through your council identity.
+Answer directly through your council identity.
 
-Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
+Rules:
+- Answer the actual question, not a different one.
+- Give one clear answer and one supporting reason.
+- If the asker raised a valid concern, acknowledge it.
+- Avoid slogans, filler, and generic safety language.
+- Do not change your role.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
-  "answer": "concise answer, two to four sentences"
+  "answer": "direct answer, two to four sentences"
 }}
 """
 
@@ -94,7 +126,16 @@ You asked {target_name} this question:
 
 Evaluate whether the answer satisfied your concern.
 
-Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
+Rules:
+- Judge the answer from your own council identity.
+- Do not be polite by default.
+- Do not be hostile by default.
+- Explain what was resolved and what remains unresolved.
+- Confidence deltas should usually be modest unless the answer strongly changes your position.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
@@ -120,13 +161,26 @@ Risk: {main_risk}
 Council deliberation context:
 {deliberation_context}
 
-Reflect on whether the exchange changed your understanding.
+Reflect on the exchange.
 
-Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
+Rules:
+- State what you genuinely learned, if anything.
+- Preserve your vote if the exchange did not defeat your core reason.
+- Change your vote only if the debate exposed a stronger reason.
+- Adjust confidence realistically.
+- Your learned statement, final vote, confidence, and reason must not contradict each other.
+- If your reasoning now supports the opposite vote, change the vote or explain why you still reject it.
+- Do not increase confidence when your own reason emphasizes unresolved uncertainty.
+- Avoid repeating your original answer word-for-word.
+- Stay within your council identity.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
-  "learned": "one or two sentences about what you learned",
+  "learned": "one or two sentences about what changed in your understanding",
   "vote_after_reflection": "AFFIRMATIVE" | "NEGATIVE",
   "confidence_after_reflection": 0-100,
   "reason": "one or two sentences explaining why your vote/confidence changed or stayed the same"
@@ -139,7 +193,8 @@ You are the non-voting Chair of the MAGI council.
 
 You do not vote.
 You do not add a new opinion.
-Your task is to summarize the actual deliberation into a decision dossier.
+You do not invent arguments that were not present.
+Your task is to turn the actual deliberation into a clear decision dossier.
 
 The proposition is:
 {proposition}
@@ -153,17 +208,34 @@ Vote split:
 Full council record:
 {council_record}
 
-Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
+The final reflected votes are authoritative.
+Use each member's final reflected vote and final reflected confidence when summarizing positions.
+Do not treat Round 1 votes or Round 1 confidence values as final positions.
+Do not attribute AFFIRMATIVE reasoning to a member whose final reflected vote is NEGATIVE, or NEGATIVE reasoning to a member whose final reflected vote is AFFIRMATIVE.
+
+Dossier rules:
+- If the decision is AFFIRMATIVE or NEGATIVE, summarize the majority reasoning faithfully.
+- If the decision is NO CONSENSUS, state that no majority exists and summarize the competing positions instead.
+- Preserve minority reasoning if any member dissented.
+- If there is no minority after reflection, say so clearly.
+- Identify unresolved questions without pretending they are solved.
+- Never leave dossier fields empty. If none exist, write a clear sentence such as: None identified in the council record.
+- Recommended next action must be concrete and operational.
+- Write in clean professional language.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
   "decision": "AFFIRMATIVE" | "NEGATIVE" | "NO CONSENSUS",
   "vote_split": "text summary of the final vote split",
-  "majority_reasoning": "concise summary of the majority reasoning",
-  "minority_reasoning": "concise summary of the minority reasoning, or state if none exists",
+  "majority_reasoning": "summary of the majority reasoning, or if NO CONSENSUS: state that no majority exists and summarize the competing positions",
+  "minority_reasoning": "summary of dissenting reasoning, or if NO CONSENSUS: summarize the unresolved opposing positions",
   "key_risks": "main risks identified by the council",
-  "outstanding_uncertainties": "what remains unresolved",
-  "required_conditions": "conditions under which the decision should be accepted",
+  "outstanding_uncertainties": "what remains unresolved, or: None identified in the council record",
+  "required_conditions": "conditions under which the decision should be accepted, or: None identified in the council record",
   "recommended_next_action": "one concrete next step"
 }}
 """

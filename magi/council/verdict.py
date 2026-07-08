@@ -60,6 +60,12 @@ def parse_verdict(member: CouncilMember, raw: str, model: str) -> Verdict:
     obj = extract_json_object(raw)
 
     vote = _clean_vote(text_field(obj, raw, "vote", "NEGATIVE"))
+    question_for = _clean_question_for(obj.get("question_for"), raw)
+    question = text_field(obj, raw, "question", "NO QUESTIONS")
+
+    if question_for == member.name:
+        question_for = "NO QUESTIONS"
+        question = "NO QUESTIONS"
 
     return Verdict(
         member_name=member.name,
@@ -78,8 +84,8 @@ def parse_verdict(member: CouncilMember, raw: str, model: str) -> Verdict:
             "main_risk",
             "No valid risk provided.",
         ),
-        question_for=_clean_question_for(obj.get("question_for"), raw),
-        question=text_field(obj, raw, "question", "NO QUESTIONS"),
+        question_for=question_for,
+        question=question,
         can_change_mind_if=text_field(
             obj,
             raw,
