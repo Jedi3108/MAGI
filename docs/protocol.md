@@ -1,33 +1,92 @@
 # MAGI Deliberation Protocol
 
-## Purpose
+MAGI is a deliberative intelligence architecture.
 
-The protocol defines how MAGI reaches decisions transparently.
+It does not begin with action. It begins with structured judgment.
 
-## Phase 1 — Independent Analysis
+The protocol is designed to make reasoning traceable, disagreement visible, and decisions auditable.
 
-Each council member analyzes the proposition independently and returns a structured statement.
+## Protocol Overview
 
-## Phase 2 — Cross-Examination
+The current MAGI protocol has five stages:
 
-Each member asks one important question intended to improve the council decision.
+1. Independent Analysis
+2. Cross-Examination
+3. Satisfaction Evaluation
+4. Reflection
+5. Chair Dossier
 
-## Phase 3 — Directed Responses
+## Round 1 — Independent Analysis
 
-Only the addressed member responds to the question.
+Each council member evaluates the proposition independently.
 
-## Phase 4 — Satisfaction Check
+The member must return:
 
-The original asker evaluates whether the response was satisfying.
+- Vote
+- Confidence
+- Core reason
+- Main risk
+- Question for another member, if needed
+- Condition under which they would change their mind
 
-## Phase 5 — Reflection
+This prevents premature consensus and preserves the distinct identity of each council member.
 
-Each member reflects on what changed.
+## Round 2 — Cross-Examination
 
-## Phase 6 — Final Vote
+Questions raised in Round 1 are routed to the addressed council member.
 
-Each member casts a final vote with confidence.
+Only the addressed member answers.
 
-## Phase 7 — Chair Summary
+This keeps debate directed rather than chaotic.
 
-A non-voting Chair produces the final decision dossier.
+## Round 3 — Satisfaction Evaluation
+
+The original asker evaluates the answer.
+
+The answer may be judged as:
+
+- SATISFIED
+- PARTIALLY SATISFIED
+- NOT SATISFIED
+
+The asker may also report a confidence delta.
+
+This stage makes unresolved objections visible.
+
+## Round 4 — Reflection
+
+Each council member reviews the deliberation context.
+
+The member may preserve or revise:
+
+- Vote
+- Confidence
+
+The reflected votes become the basis for the final council decision.
+
+## Round 5 — Chair Dossier
+
+The Chair is non-voting.
+
+The Chair summarizes the actual deliberation into a decision dossier.
+
+The dossier includes:
+
+- Final decision
+- Vote split
+- Majority reasoning
+- Minority reasoning
+- Key risks
+- Outstanding uncertainties
+- Required conditions
+- Recommended next action
+
+## Design Principle
+
+The council reasons.
+
+The Chair summarizes.
+
+The system does not hide disagreement.
+
+Minority reports are preserved because disagreement is information.
