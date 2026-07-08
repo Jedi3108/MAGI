@@ -15,7 +15,7 @@ Instead of relying on a single AI model, MAGI uses a structured council of speci
 
 ## Project Status
 
-Current phase: **v0.0.1 — Genesis**
+Current phase: **v0.2.0-alpha — Local Deliberation Engine**
 
 MAGI is currently in foundation setup. The first target milestone is:
 
@@ -62,7 +62,11 @@ python -m unittest discover tests
 
 ## Current Milestone
 
-### v0.1.0-alpha — The First Council
+### v0.2.0-alpha — Local Deliberation Engine
+
+MAGI now supports real local Ollama execution, JSON-mode robustness, progress indicators, improved council prompts, self-question prevention, and a structured final-vote record for the non-voting Chair.
+
+See [`docs/releases/v0.2.0-alpha.md`](docs/releases/v0.2.0-alpha.md) for release notes.
 
 MAGI currently supports a complete mock-mode deliberation protocol:
 
