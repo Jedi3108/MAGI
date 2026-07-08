@@ -7,7 +7,7 @@ from typing import Callable
 
 from magi.chair.dossier import DecisionDossier, parse_decision_dossier
 from magi.chair.record import build_structured_chair_record
-from magi.council.members import COUNCIL, CouncilMember
+from magi.council.members import CHAIR_SAMPLING, COUNCIL, CouncilMember
 from magi.council.verdict import Verdict, parse_verdict
 from magi.models.mock import (
     mock_answer,
@@ -39,19 +39,24 @@ DEFAULT_MODEL = "llama3.2"
 JUDGE_INSTRUCTION = """
 You are taking part in Round 1 of the MAGI deliberation protocol: Independent Analysis.
 
-Evaluate the proposition strictly through your own council identity.
+You are ONE facet of the council, and only one. Judge this proposition strictly
+through your own charge, as defined by your identity in the system prompt.
+
+Do not reason on behalf of the other members.
+Do not try to be balanced. Do not average competing concerns.
+Balance is the council's job, not yours. Your job is to represent your facet without compromise.
 
 Do not imitate the other council members.
 Do not give a generic assistant answer.
+Do not retreat to the safe, agreeable, or middle-of-the-road position.
 Do not force consensus.
-Disagreement is allowed.
-A minority position is valuable if it exposes a real concern.
 
-Use your facet to produce a concrete judgment:
-- MELCHIOR cares about evidence, truth, uncertainty, and technical correctness.
-- BALTHASAR cares about safety, harm, care, stability, and sustainability.
-- CASPER cares about individuality, dignity, desire, aesthetics, and suppressed perspectives.
-- ARTABAN cares about action, duty, execution, accountability, and consequences.
+If your facet pulls against the obvious answer, follow your facet and name the conflict openly.
+Disagreement is allowed.
+A minority position is valuable if it exposes a real concern your facet sees and others would miss.
+
+Your core_reason must be the judgment your facet forces on you,
+not a summary of what a reasonable person would conclude.
 
 Confidence calibration:
 - 50 means genuinely uncertain.
@@ -354,7 +359,16 @@ class MagiEngine:
             raw = mock_verdict(member.name, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=member.persona, user=user_prompt, response_format="json")
+            s = member.sampling
+            raw = chat(
+                model=model,
+                system=member.persona,
+                user=user_prompt,
+                temperature=s.temperature,
+                top_p=s.top_p,
+                repeat_penalty=s.repeat_penalty,
+                response_format="json",
+            )
 
         return parse_verdict(member=member, raw=raw, model=model)
 
@@ -488,7 +502,16 @@ class MagiEngine:
             raw = mock_answer(target.name, question.question, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=target.persona, user=user_prompt, response_format="json")
+            s = target.sampling
+            raw = chat(
+                model=model,
+                system=target.persona,
+                user=user_prompt,
+                temperature=s.temperature,
+                top_p=s.top_p,
+                repeat_penalty=s.repeat_penalty,
+                response_format="json",
+            )
 
         return parse_cross_examination_answer(
             question=question,
@@ -540,7 +563,16 @@ class MagiEngine:
             raw = mock_evaluation(asker.name, answer.answer, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=asker.persona, user=user_prompt, response_format="json")
+            s = asker.sampling
+            raw = chat(
+                model=model,
+                system=asker.persona,
+                user=user_prompt,
+                temperature=s.temperature,
+                top_p=s.top_p,
+                repeat_penalty=s.repeat_penalty,
+                response_format="json",
+            )
 
         return parse_satisfaction_evaluation(
             answer=answer,
@@ -597,7 +629,16 @@ class MagiEngine:
             )
             model = "mock"
         else:
-            raw = chat(model=model, system=member.persona, user=user_prompt, response_format="json")
+            s = member.sampling
+            raw = chat(
+                model=model,
+                system=member.persona,
+                user=user_prompt,
+                temperature=s.temperature,
+                top_p=s.top_p,
+                repeat_penalty=s.repeat_penalty,
+                response_format="json",
+            )
 
         return parse_reflection(
             member=member,
@@ -667,6 +708,9 @@ class MagiEngine:
                     "You summarize faithfully. You do not add a new vote."
                 ),
                 user=user_prompt,
+                temperature=CHAIR_SAMPLING.temperature,
+                top_p=CHAIR_SAMPLING.top_p,
+                repeat_penalty=CHAIR_SAMPLING.repeat_penalty,
                 response_format="json",
             )
 
