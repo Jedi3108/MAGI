@@ -14,7 +14,12 @@ from magi.models.mock import (
     mock_reflection,
     mock_verdict,
 )
-from magi.models.ollama import chat, installed_models
+from magi.models.ollama import (
+    OllamaModelNotFoundError,
+    chat,
+    installed_models,
+    resolve_model_name,
+)
 from magi.protocol.examination import (
     CrossExaminationAnswer,
     RoutedQuestion,
@@ -175,26 +180,85 @@ class MagiEngine:
     ) -> None:
         self.mock = mock
         self.default_model = default_model
+        self.model_notes: list[str] = []
+
         self.models = self._resolve_models(model=model, same=same)
-        self.chair_model = model or default_model
+        self.chair_model = "mock" if mock else self._resolve_chair_model(model=model)
+
+    def _resolve_required_model(self, requested: str, available: list[str]) -> str:
+        resolved = resolve_model_name(requested, available)
+        if not resolved:
+            raise OllamaModelNotFoundError(requested=requested, available=available)
+        return resolved
+
+    def _resolve_chair_model(self, model: str | None) -> str:
+        if self.mock:
+            return "mock"
+
+        available = installed_models()
+        requested = model or self.default_model
+
+        resolved = resolve_model_name(requested, available)
+        if resolved:
+            return resolved
+
+        if available:
+            fallback = available[0]
+            self.model_notes.append(
+                f"Chair fallback: requested {requested!r}, using {fallback!r}."
+            )
+            return fallback
+
+        raise OllamaModelNotFoundError(requested=requested, available=available)
 
     def _resolve_models(self, model: str | None, same: bool) -> dict[str, str]:
-        if model:
-            return {member.name: model for member in COUNCIL}
-
-        if same or self.mock:
+        if self.mock:
             return {member.name: self.default_model for member in COUNCIL}
 
         available = installed_models()
-        resolved: dict[str, str] = {}
+
+        if model:
+            resolved = self._resolve_required_model(model, available)
+            return {member.name: resolved for member in COUNCIL}
+
+        if same:
+            resolved = self._resolve_required_model(self.default_model, available)
+            return {member.name: resolved for member in COUNCIL}
+
+        resolved_models: dict[str, str] = {}
 
         for member in COUNCIL:
-            if member.preferred_model in available:
-                resolved[member.name] = member.preferred_model
-            else:
-                resolved[member.name] = self.default_model
+            preferred = resolve_model_name(member.preferred_model, available)
 
-        return resolved
+            if preferred:
+                resolved_models[member.name] = preferred
+                continue
+
+            default = resolve_model_name(self.default_model, available)
+
+            if default:
+                resolved_models[member.name] = default
+                self.model_notes.append(
+                    f"{member.name} fallback: preferred {member.preferred_model!r}, "
+                    f"using default {default!r}."
+                )
+                continue
+
+            if available:
+                fallback = available[0]
+                resolved_models[member.name] = fallback
+                self.model_notes.append(
+                    f"{member.name} fallback: preferred {member.preferred_model!r} "
+                    f"and default {self.default_model!r} unavailable, using {fallback!r}."
+                )
+                continue
+
+            raise OllamaModelNotFoundError(
+                requested=self.default_model,
+                available=available,
+            )
+
+        return resolved_models
 
     def _ask_member(self, member: CouncilMember, proposition: str) -> Verdict:
         model = self.models[member.name]
@@ -559,6 +623,7 @@ class MagiEngine:
             "reflections": reflections,
             "decision": decision,
             "dossier": dossier,
+            "model_notes": self.model_notes,
         }
 
 
