@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
 from magi.chair.dossier import DecisionDossier, parse_decision_dossier
+from magi.chair.record import build_structured_chair_record
 from magi.council.members import COUNCIL, CouncilMember
 from magi.council.verdict import Verdict, parse_verdict
 from magi.models.mock import (
@@ -205,15 +206,20 @@ Final decision:
 Vote split:
 {vote_split}
 
-Full council record:
+Authoritative final reflected vote record:
+{final_vote_record}
+
+Full council transcript:
 {council_record}
 
+The authoritative final reflected vote record overrides the transcript if they appear to conflict.
 The final reflected votes are authoritative.
 Use each member's final reflected vote and final reflected confidence when summarizing positions.
 Do not treat Round 1 votes or Round 1 confidence values as final positions.
 Do not attribute AFFIRMATIVE reasoning to a member whose final reflected vote is NEGATIVE, or NEGATIVE reasoning to a member whose final reflected vote is AFFIRMATIVE.
 
 Dossier rules:
+- Base vote attribution on the authoritative final reflected vote record, not on inference from prose.
 - If the decision is AFFIRMATIVE or NEGATIVE, summarize the majority reasoning faithfully.
 - If the decision is NO CONSENSUS, state that no majority exists and summarize the competing positions instead.
 - Preserve minority reasoning if any member dissented.
@@ -231,8 +237,8 @@ Required schema:
 {{
   "decision": "AFFIRMATIVE" | "NEGATIVE" | "NO CONSENSUS",
   "vote_split": "text summary of the final vote split",
-  "majority_reasoning": "summary of the majority reasoning, or if NO CONSENSUS: state that no majority exists and summarize the competing positions",
-  "minority_reasoning": "summary of dissenting reasoning, or if NO CONSENSUS: summarize the unresolved opposing positions",
+  "majority_reasoning": "summary based on final reflected votes only; if NO CONSENSUS: state that no majority exists and summarize the competing final positions",
+  "minority_reasoning": "summary based on final reflected votes only; if NO CONSENSUS: summarize the unresolved opposing final positions",
   "key_risks": "main risks identified by the council",
   "outstanding_uncertainties": "what remains unresolved, or: None identified in the council record",
   "required_conditions": "conditions under which the decision should be accepted, or: None identified in the council record",
@@ -635,10 +641,13 @@ class MagiEngine:
         vote_split = f"{decision['affirmative']} affirmative / {decision['negative']} negative"
         model = self.chair_model
 
+        final_vote_record = build_structured_chair_record(reflections)
+
         user_prompt = CHAIR_INSTRUCTION.format(
             proposition=proposition,
             decision=decision["decision"],
             vote_split=vote_split,
+            final_vote_record=final_vote_record,
             council_record=self._council_record(
                 verdicts=verdicts,
                 answers=answers,
