@@ -15,6 +15,7 @@ from magi.utils.terminal import (
     render_banner,
     render_cross_examination,
     render_decision,
+    render_satisfaction_evaluations,
     render_verdicts,
 )
 
@@ -47,6 +48,7 @@ def main() -> None:
 
     render_verdicts(result["verdicts"])
     render_cross_examination(result["answers"])
+    render_satisfaction_evaluations(result["evaluations"])
     render_decision(result["decision"])
 
 

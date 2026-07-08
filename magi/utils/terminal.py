@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from magi.council.verdict import Verdict
-from magi.protocol.examination import CrossExaminationAnswer
+from magi.protocol.examination import CrossExaminationAnswer, SatisfactionEvaluation
 
 
 class C:
@@ -85,6 +85,37 @@ def render_cross_examination(answers: list[CrossExaminationAnswer]) -> None:
         print(f"  Q: {answer.question}")
         print(f"  A: {answer.answer}")
         print(f"  {C.GREY}model: {answer.model}{C.RESET}")
+
+
+def render_satisfaction_evaluations(evaluations: list[SatisfactionEvaluation]) -> None:
+    print(f"\n{C.GREY}{'─' * 72}{C.RESET}")
+    print(f"{C.BOLD}ROUND 3 :: SATISFACTION EVALUATION{C.RESET}")
+    print(f"{C.GREY}{'─' * 72}{C.RESET}")
+
+    if not evaluations:
+        print(f"{C.GREY}No answers to evaluate. Satisfaction evaluation skipped.{C.RESET}")
+        return
+
+    for evaluation in evaluations:
+        asker_color = COLORS.get(evaluation.asker_name, C.GREY)
+        target_color = COLORS.get(evaluation.target_name, C.GREY)
+
+        if evaluation.satisfaction == "SATISFIED":
+            status_color = C.GREEN
+        elif evaluation.satisfaction == "NOT SATISFIED":
+            status_color = C.RED
+        else:
+            status_color = C.AMBER
+
+        print(
+            f"\n{asker_color}{C.BOLD}{evaluation.asker_name}{C.RESET} "
+            f"{C.GREY}evaluates answer from{C.RESET} "
+            f"{target_color}{C.BOLD}{evaluation.target_name}{C.RESET}"
+        )
+        print(f"  Status: {status_color}{evaluation.satisfaction}{C.RESET}")
+        print(f"  Reason: {evaluation.reason}")
+        print(f"  Confidence delta: {evaluation.confidence_delta:+d}")
+        print(f"  {C.GREY}model: {evaluation.model}{C.RESET}")
 
 
 def render_decision(decision: dict) -> None:
