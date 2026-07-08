@@ -28,6 +28,10 @@ from magi.utils.terminal import (
 )
 
 
+def render_progress(message: str) -> None:
+    print(f"{C.GREY}MAGI progress :: {message}{C.RESET}", flush=True)
+
+
 def print_ollama_status() -> None:
     status = ollama_status()
 
@@ -68,7 +72,7 @@ def main() -> None:
     render_banner()
 
     try:
-        engine = MagiEngine(model=args.model, mock=args.mock, same=args.same)
+        engine = MagiEngine(model=args.model, mock=args.mock, same=args.same, progress=render_progress)
 
         print("Council model assignment:")
         for member_name, model in engine.models.items():

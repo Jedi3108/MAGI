@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from typing import Callable
 
 from magi.chair.dossier import DecisionDossier, parse_decision_dossier
 from magi.council.members import COUNCIL, CouncilMember
@@ -176,14 +177,21 @@ class MagiEngine:
         model: str | None = None,
         mock: bool = False,
         same: bool = False,
+        progress: Callable[[str], None] | None = None,
         default_model: str = DEFAULT_MODEL,
     ) -> None:
         self.mock = mock
         self.default_model = default_model
+        self.progress = progress
         self.model_notes: list[str] = []
 
         self.models = self._resolve_models(model=model, same=same)
         self.chair_model = "mock" if mock else self._resolve_chair_model(model=model)
+
+    def _progress(self, message: str) -> None:
+        """Emit a progress message if a progress callback is configured."""
+        if self.progress:
+            self.progress(message)
 
     def _resolve_required_model(self, requested: str, available: list[str]) -> str:
         resolved = resolve_model_name(requested, available)
@@ -590,22 +598,33 @@ class MagiEngine:
 
     def deliberate(self, proposition: str) -> dict:
         """Run the current council protocol."""
+        self._progress("Round 1/5 — independent analysis")
         verdicts = self.independent_analysis(proposition)
+
+        self._progress("Round 2/5 — cross-examination")
         questions, answers = self.cross_examination(
             proposition=proposition,
             verdicts=verdicts,
         )
+
+        self._progress("Round 3/5 — satisfaction evaluation")
         evaluations = self.satisfaction_evaluation(
             proposition=proposition,
             answers=answers,
         )
+
+        self._progress("Round 4/5 — reflection")
         reflections = self.reflection_round(
             proposition=proposition,
             verdicts=verdicts,
             answers=answers,
             evaluations=evaluations,
         )
+
+        self._progress("Decision — tallying reflected votes")
         decision = decide_reflections(reflections)
+
+        self._progress("Round 5/5 — chair dossier")
         dossier = self.chair_dossier(
             proposition=proposition,
             verdicts=verdicts,
