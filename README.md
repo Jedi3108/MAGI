@@ -82,3 +82,54 @@ Run tests:
 python -m unittest discover tests
 
 The current release proves protocol correctness, not intelligence quality.
+
+---
+
+## Running with Ollama
+
+MAGI can run in two modes:
+
+### Mock mode
+
+Mock mode does not require Ollama or any local model.
+
+```bash
+python scripts/magi_cli.py --mock "Should MAGI preserve minority reports?"
+Mock mode is useful for testing the protocol.
+
+Real local model mode
+
+Install and run Ollama first.
+
+Check whether Ollama is reachable:
+
+python scripts/magi_cli.py --check-ollama
+
+List installed models:
+
+python scripts/magi_cli.py --list-models
+
+Install a basic model:
+
+ollama pull llama3.2
+
+Run MAGI with one model for the whole council:
+
+python scripts/magi_cli.py --model llama3.2 "Should MAGI preserve minority reports?"
+
+Run MAGI with the default model for all members:
+
+python scripts/magi_cli.py --same "Should MAGI preserve minority reports?"
+
+Run MAGI with preferred council models when available:
+
+python scripts/magi_cli.py "Should MAGI preserve minority reports?"
+
+Preferred models are currently:
+
+MELCHIOR → qwen2.5
+BALTHASAR → gemma2
+CASPER → mistral
+ARTABAN → llama3.1
+
+If a preferred model is unavailable, MAGI attempts a safe fallback and reports the fallback in the terminal output.
