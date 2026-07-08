@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from magi.council.members import COUNCIL, CouncilMember
 from magi.council.verdict import Verdict, parse_verdict
-from magi.models.mock import mock_answer, mock_evaluation, mock_verdict
+from magi.models.mock import mock_answer, mock_evaluation, mock_reflection, mock_verdict
 from magi.models.ollama import chat, installed_models
 from magi.protocol.examination import (
     CrossExaminationAnswer,
@@ -16,6 +16,7 @@ from magi.protocol.examination import (
     parse_cross_examination_answer,
     parse_satisfaction_evaluation,
 )
+from magi.protocol.reflection import Reflection, parse_reflection
 
 
 DEFAULT_MODEL = "llama3.2"
@@ -91,6 +92,35 @@ Required schema:
 """
 
 
+REFLECTION_INSTRUCTION = """
+You are in Round 4 of the MAGI deliberation protocol: Reflection.
+
+The proposition is:
+{proposition}
+
+Your original position:
+Vote: {vote_before}
+Confidence: {confidence_before}
+Reason: {core_reason}
+Risk: {main_risk}
+
+Council deliberation context:
+{deliberation_context}
+
+Reflect on whether the exchange changed your understanding.
+
+Return ONLY a JSON object. No prose. No markdown.
+
+Required schema:
+{{
+  "learned": "one or two sentences about what you learned",
+  "vote_after_reflection": "AFFIRMATIVE" | "NEGATIVE",
+  "confidence_after_reflection": 0-100,
+  "reason": "one or two sentences explaining why your vote/confidence changed or stayed the same"
+}}
+"""
+
+
 class MagiEngine:
     """Runs the MAGI council."""
 
@@ -146,6 +176,12 @@ class MagiEngine:
                 return member
         raise ValueError(f"Unknown council member: {name}")
 
+    def _verdict_by_member(self, verdicts: list[Verdict], name: str) -> Verdict:
+        for verdict in verdicts:
+            if verdict.member_name == name:
+                return verdict
+        raise ValueError(f"No verdict found for: {name}")
+
     def _council_context(self, verdicts: list[Verdict]) -> str:
         return "\n".join(
             (
@@ -156,6 +192,33 @@ class MagiEngine:
             )
             for verdict in verdicts
         )
+
+    def _deliberation_context(
+        self,
+        answers: list[CrossExaminationAnswer],
+        evaluations: list[SatisfactionEvaluation],
+    ) -> str:
+        answer_lines = [
+            (
+                f"- {answer.asker_name} asked {answer.target_name}: "
+                f"{answer.question} Answer: {answer.answer}"
+            )
+            for answer in answers
+        ]
+
+        evaluation_lines = [
+            (
+                f"- {evaluation.asker_name} evaluated {evaluation.target_name}: "
+                f"{evaluation.satisfaction}. Reason: {evaluation.reason} "
+                f"Confidence delta: {evaluation.confidence_delta:+d}"
+            )
+            for evaluation in evaluations
+        ]
+
+        if not answer_lines and not evaluation_lines:
+            return "No cross-examination occurred."
+
+        return "\n".join(answer_lines + evaluation_lines)
 
     def _answer_question(
         self,
@@ -257,6 +320,66 @@ class MagiEngine:
                 )
             )
 
+    def _reflect_member(
+        self,
+        member: CouncilMember,
+        proposition: str,
+        verdicts: list[Verdict],
+        answers: list[CrossExaminationAnswer],
+        evaluations: list[SatisfactionEvaluation],
+    ) -> Reflection:
+        verdict = self._verdict_by_member(verdicts, member.name)
+        model = self.models[member.name]
+
+        user_prompt = REFLECTION_INSTRUCTION.format(
+            proposition=proposition,
+            vote_before=verdict.vote,
+            confidence_before=verdict.confidence,
+            core_reason=verdict.core_reason,
+            main_risk=verdict.main_risk,
+            deliberation_context=self._deliberation_context(answers, evaluations),
+        )
+
+        if self.mock:
+            raw = mock_reflection(
+                member.name,
+                verdict.vote,
+                verdict.confidence,
+                user_prompt,
+            )
+            model = "mock"
+        else:
+            raw = chat(model=model, system=member.persona, user=user_prompt)
+
+        return parse_reflection(
+            member=member,
+            verdict=verdict,
+            raw=raw,
+            model=model,
+        )
+
+    def reflection_round(
+        self,
+        proposition: str,
+        verdicts: list[Verdict],
+        answers: list[CrossExaminationAnswer],
+        evaluations: list[SatisfactionEvaluation],
+    ) -> list[Reflection]:
+        """Run reflection for every council member."""
+        with ThreadPoolExecutor(max_workers=len(COUNCIL)) as pool:
+            return list(
+                pool.map(
+                    lambda member: self._reflect_member(
+                        member=member,
+                        proposition=proposition,
+                        verdicts=verdicts,
+                        answers=answers,
+                        evaluations=evaluations,
+                    ),
+                    COUNCIL,
+                )
+            )
+
     def deliberate(self, proposition: str) -> dict:
         """Run the current council protocol."""
         verdicts = self.independent_analysis(proposition)
@@ -268,7 +391,13 @@ class MagiEngine:
             proposition=proposition,
             answers=answers,
         )
-        decision = decide(verdicts)
+        reflections = self.reflection_round(
+            proposition=proposition,
+            verdicts=verdicts,
+            answers=answers,
+            evaluations=evaluations,
+        )
+        decision = decide_reflections(reflections)
 
         return {
             "proposition": proposition,
@@ -276,6 +405,7 @@ class MagiEngine:
             "questions": questions,
             "answers": answers,
             "evaluations": evaluations,
+            "reflections": reflections,
             "decision": decision,
         }
 
@@ -284,6 +414,25 @@ def decide(verdicts: list[Verdict]) -> dict:
     """Decide by simple majority; ties are reported as no consensus."""
     affirmative = [verdict for verdict in verdicts if verdict.approves]
     negative = [verdict for verdict in verdicts if not verdict.approves]
+
+    if len(affirmative) > len(negative):
+        decision = "AFFIRMATIVE"
+    elif len(negative) > len(affirmative):
+        decision = "NEGATIVE"
+    else:
+        decision = "NO CONSENSUS"
+
+    return {
+        "decision": decision,
+        "affirmative": len(affirmative),
+        "negative": len(negative),
+    }
+
+
+def decide_reflections(reflections: list[Reflection]) -> dict:
+    """Decide by simple majority after reflection."""
+    affirmative = [reflection for reflection in reflections if reflection.approves]
+    negative = [reflection for reflection in reflections if not reflection.approves]
 
     if len(affirmative) > len(negative):
         decision = "AFFIRMATIVE"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from magi.council.verdict import Verdict
 from magi.protocol.examination import CrossExaminationAnswer, SatisfactionEvaluation
+from magi.protocol.reflection import Reflection
 
 
 class C:
@@ -118,6 +119,29 @@ def render_satisfaction_evaluations(evaluations: list[SatisfactionEvaluation]) -
         print(f"  {C.GREY}model: {evaluation.model}{C.RESET}")
 
 
+def render_reflections(reflections: list[Reflection]) -> None:
+    print(f"\n{C.GREY}{'─' * 72}{C.RESET}")
+    print(f"{C.BOLD}ROUND 4 :: REFLECTION{C.RESET}")
+    print(f"{C.GREY}{'─' * 72}{C.RESET}")
+
+    for reflection in reflections:
+        color = COLORS.get(reflection.member_name, C.GREY)
+        vote_color = C.GREEN if reflection.approves else C.RED
+
+        print(
+            f"\n{color}{C.BOLD}{reflection.member_name:<10}{C.RESET} "
+            f"{C.DIM}{reflection.member_title:<14}{C.RESET} "
+            f"{vote_color}{reflection.vote_before} → {reflection.vote_after}{C.RESET}"
+        )
+        print(
+            f"  Confidence: {reflection.confidence_before} → "
+            f"{reflection.confidence_after}"
+        )
+        print(f"  Learned: {reflection.learned}")
+        print(f"  Reason:  {reflection.reason}")
+        print(f"  {C.GREY}model: {reflection.model}{C.RESET}")
+
+
 def render_decision(decision: dict) -> None:
     result = decision["decision"]
 
@@ -129,7 +153,7 @@ def render_decision(decision: dict) -> None:
         color = C.AMBER
 
     print(f"\n{color}{'═' * 72}{C.RESET}")
-    print(f"{color}{C.BOLD}MAGI DECISION :: {result}{C.RESET}")
+    print(f"{color}{C.BOLD}MAGI DECISION AFTER REFLECTION :: {result}{C.RESET}")
     print(
         f"{color}Split: {decision['affirmative']} affirmative / "
         f"{decision['negative']} negative{C.RESET}"
