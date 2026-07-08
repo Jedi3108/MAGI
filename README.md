@@ -38,3 +38,22 @@ MAGI is currently in foundation setup. The first target milestone is:
 - `experiments/` — unstable ideas
 - `ui/` — future interface
 - `journal/` — development journal
+
+## Running MAGI
+
+Run the council in offline mock mode:
+
+```bash
+python scripts/magi_cli.py --mock "Should MAGI preserve minority reports?"
+Run the council with local Ollama:
+
+python scripts/magi_cli.py "Should MAGI preserve minority reports?"
+
+Force all council members to use one model:
+
+python scripts/magi_cli.py --model qwen2.5 "Should MAGI preserve minority reports?"
+
+Run tests:
+
+python -m unittest discover tests
+
