@@ -57,3 +57,28 @@ Run tests:
 
 python -m unittest discover tests
 
+
+---
+
+## Current Milestone
+
+### v0.1.0-alpha — The First Council
+
+MAGI currently supports a complete mock-mode deliberation protocol:
+
+1. Independent analysis
+2. Cross-examination
+3. Satisfaction evaluation
+4. Reflection
+5. Non-voting Chair dossier
+
+Run a mock deliberation:
+
+```bash
+python scripts/magi_cli.py --mock "Should MAGI preserve minority reports?"
+
+Run tests:
+
+python -m unittest discover tests
+
+The current release proves protocol correctness, not intelligence quality.
