@@ -7,6 +7,7 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from typing import Any
 
 
 OLLAMA_BASE_URL = os.environ.get("MAGI_OLLAMA_BASE_URL", "http://localhost:11434")
@@ -96,13 +97,7 @@ def normalize_model_name(name: str) -> str:
 
 
 def resolve_model_name(requested: str, available: list[str]) -> str | None:
-    """Resolve a requested model against installed Ollama models.
-
-    Supports:
-    - exact match: llama3.2:latest
-    - short match: llama3.2 -> llama3.2:latest
-    - prefix match: qwen2.5 -> qwen2.5:7b
-    """
+    """Resolve a requested model against installed Ollama models."""
     requested_clean = requested.strip()
     requested_norm = normalize_model_name(requested_clean)
 
@@ -175,9 +170,21 @@ def format_model_list(models: list[str]) -> str:
     return "\n".join(f"  - {model}" for model in models)
 
 
-def chat(model: str, system: str, user: str, temperature: float = 0.7) -> str:
-    """Call Ollama chat API."""
-    payload = {
+def chat(
+    model: str,
+    system: str,
+    user: str,
+    temperature: float = 0.2,
+    response_format: str | dict[str, Any] | None = None,
+) -> str:
+    """Call Ollama chat API.
+
+    response_format may be:
+    - "json"
+    - a JSON schema dictionary
+    - None
+    """
+    payload: dict[str, Any] = {
         "model": model,
         "messages": [
             {
@@ -194,6 +201,9 @@ def chat(model: str, system: str, user: str, temperature: float = 0.7) -> str:
             "temperature": temperature,
         },
     }
+
+    if response_format is not None:
+        payload["format"] = response_format
 
     data = _request_json(OLLAMA_CHAT_URL, payload=payload)
 

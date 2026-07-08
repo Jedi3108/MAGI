@@ -37,7 +37,7 @@ DEFAULT_MODEL = "llama3.2"
 JUDGE_INSTRUCTION = """
 Evaluate the proposition strictly through your council identity.
 
-Return ONLY a JSON object. No prose. No markdown.
+Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
 
 Required schema:
 {{
@@ -70,7 +70,7 @@ A question was addressed to you by {asker_name}:
 
 Answer the question directly through your council identity.
 
-Return ONLY a JSON object. No prose. No markdown.
+Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
 
 Required schema:
 {{
@@ -93,7 +93,7 @@ You asked {target_name} this question:
 
 Evaluate whether the answer satisfied your concern.
 
-Return ONLY a JSON object. No prose. No markdown.
+Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
 
 Required schema:
 {{
@@ -121,7 +121,7 @@ Council deliberation context:
 
 Reflect on whether the exchange changed your understanding.
 
-Return ONLY a JSON object. No prose. No markdown.
+Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
 
 Required schema:
 {{
@@ -152,7 +152,7 @@ Vote split:
 Full council record:
 {council_record}
 
-Return ONLY a JSON object. No prose. No markdown.
+Return ONLY one valid JSON object. No prose, no markdown, no comments, no trailing text. All string values must be plain text.
 
 Required schema:
 {{
@@ -268,7 +268,7 @@ class MagiEngine:
             raw = mock_verdict(member.name, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=member.persona, user=user_prompt)
+            raw = chat(model=model, system=member.persona, user=user_prompt, response_format="json")
 
         return parse_verdict(member=member, raw=raw, model=model)
 
@@ -402,7 +402,7 @@ class MagiEngine:
             raw = mock_answer(target.name, question.question, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=target.persona, user=user_prompt)
+            raw = chat(model=model, system=target.persona, user=user_prompt, response_format="json")
 
         return parse_cross_examination_answer(
             question=question,
@@ -454,7 +454,7 @@ class MagiEngine:
             raw = mock_evaluation(asker.name, answer.answer, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=asker.persona, user=user_prompt)
+            raw = chat(model=model, system=asker.persona, user=user_prompt, response_format="json")
 
         return parse_satisfaction_evaluation(
             answer=answer,
@@ -511,7 +511,7 @@ class MagiEngine:
             )
             model = "mock"
         else:
-            raw = chat(model=model, system=member.persona, user=user_prompt)
+            raw = chat(model=model, system=member.persona, user=user_prompt, response_format="json")
 
         return parse_reflection(
             member=member,
@@ -578,6 +578,7 @@ class MagiEngine:
                     "You summarize faithfully. You do not add a new vote."
                 ),
                 user=user_prompt,
+                response_format="json",
             )
 
         return parse_decision_dossier(

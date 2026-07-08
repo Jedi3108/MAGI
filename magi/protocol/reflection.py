@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 from magi.council.members import CouncilMember
 from magi.council.verdict import Verdict
+from magi.utils.json_tools import extract_json_object, int_field, text_field
 
 
 @dataclass
@@ -29,32 +29,13 @@ class Reflection:
         return self.vote_after == "AFFIRMATIVE"
 
 
-def _extract_json(raw: str) -> dict:
-    text = raw.strip()
-    start = text.find("{")
-    end = text.rfind("}")
-
-    if start == -1 or end == -1 or end <= start:
-        return {}
-
-    try:
-        return json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return {}
-
-
 def _clean_vote(value: object, fallback: str) -> str:
     vote = str(value or fallback).strip().upper()
+
     if vote in {"AFFIRMATIVE", "NEGATIVE"}:
         return vote
+
     return fallback
-
-
-def _clean_confidence(value: object, fallback: int) -> int:
-    try:
-        return max(0, min(100, int(value)))
-    except (TypeError, ValueError):
-        return fallback
 
 
 def parse_reflection(
@@ -64,20 +45,41 @@ def parse_reflection(
     model: str,
 ) -> Reflection:
     """Parse a reflection response."""
-    obj = _extract_json(raw)
+    obj = extract_json_object(raw)
+
+    vote_raw = text_field(
+        obj,
+        raw,
+        "vote_after_reflection",
+        verdict.vote,
+    )
 
     return Reflection(
         member_name=member.name,
         member_title=member.title,
         vote_before=verdict.vote,
-        vote_after=_clean_vote(obj.get("vote_after_reflection"), verdict.vote),
+        vote_after=_clean_vote(vote_raw, verdict.vote),
         confidence_before=verdict.confidence,
-        confidence_after=_clean_confidence(
-            obj.get("confidence_after_reflection"),
+        confidence_after=int_field(
+            obj,
+            raw,
+            "confidence_after_reflection",
             verdict.confidence,
+            0,
+            100,
         ),
-        learned=str(obj.get("learned") or "No explicit learning stated.").strip(),
-        reason=str(obj.get("reason") or raw[:500]).strip(),
+        learned=text_field(
+            obj,
+            raw,
+            "learned",
+            "No valid learning statement provided.",
+        ),
+        reason=text_field(
+            obj,
+            raw,
+            "reason",
+            "No valid reflection reason provided.",
+        ),
         model=model,
         raw=raw,
     )
