@@ -123,3 +123,41 @@ def mock_reflection(
             ),
         }
     )
+
+
+def mock_chair_dossier(decision: str, vote_split: str, prompt: str) -> str:
+    """Return a deterministic fake Chair dossier as JSON."""
+    seed = int(hashlib.sha256((decision + vote_split + prompt).encode("utf-8")).hexdigest(), 16)
+    rng = random.Random(seed)
+
+    return json.dumps(
+        {
+            "decision": decision,
+            "vote_split": vote_split,
+            "majority_reasoning": (
+                "[MOCK] The majority position follows from the reflected votes "
+                "and the dominant concerns raised during deliberation."
+            ),
+            "minority_reasoning": (
+                "[MOCK] The minority position preserves an unresolved objection "
+                "that should not be discarded."
+            ),
+            "key_risks": (
+                "[MOCK] The main risk is over-interpreting a structured protocol "
+                "as actual wisdom before using stronger models."
+            ),
+            "outstanding_uncertainties": (
+                "[MOCK] The council still lacks external evidence and long-term memory."
+            ),
+            "required_conditions": (
+                "[MOCK] Treat this as a provisional decision unless future evidence contradicts it."
+            ),
+            "recommended_next_action": rng.choice(
+                [
+                    "[MOCK] Proceed cautiously and record the decision trace.",
+                    "[MOCK] Request more evidence before execution.",
+                    "[MOCK] Accept the ruling but preserve the minority report.",
+                ]
+            ),
+        }
+    )

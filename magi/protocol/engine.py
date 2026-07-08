@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 
+from magi.chair.dossier import DecisionDossier, parse_decision_dossier
 from magi.council.members import COUNCIL, CouncilMember
 from magi.council.verdict import Verdict, parse_verdict
-from magi.models.mock import mock_answer, mock_evaluation, mock_reflection, mock_verdict
+from magi.models.mock import (
+    mock_answer,
+    mock_chair_dossier,
+    mock_evaluation,
+    mock_reflection,
+    mock_verdict,
+)
 from magi.models.ollama import chat, installed_models
 from magi.protocol.examination import (
     CrossExaminationAnswer,
@@ -121,6 +128,41 @@ Required schema:
 """
 
 
+CHAIR_INSTRUCTION = """
+You are the non-voting Chair of the MAGI council.
+
+You do not vote.
+You do not add a new opinion.
+Your task is to summarize the actual deliberation into a decision dossier.
+
+The proposition is:
+{proposition}
+
+Final decision:
+{decision}
+
+Vote split:
+{vote_split}
+
+Full council record:
+{council_record}
+
+Return ONLY a JSON object. No prose. No markdown.
+
+Required schema:
+{{
+  "decision": "AFFIRMATIVE" | "NEGATIVE" | "NO CONSENSUS",
+  "vote_split": "text summary of the final vote split",
+  "majority_reasoning": "concise summary of the majority reasoning",
+  "minority_reasoning": "concise summary of the minority reasoning, or state if none exists",
+  "key_risks": "main risks identified by the council",
+  "outstanding_uncertainties": "what remains unresolved",
+  "required_conditions": "conditions under which the decision should be accepted",
+  "recommended_next_action": "one concrete next step"
+}}
+"""
+
+
 class MagiEngine:
     """Runs the MAGI council."""
 
@@ -134,6 +176,7 @@ class MagiEngine:
         self.mock = mock
         self.default_model = default_model
         self.models = self._resolve_models(model=model, same=same)
+        self.chair_model = model or default_model
 
     def _resolve_models(self, model: str | None, same: bool) -> dict[str, str]:
         if model:
@@ -219,6 +262,61 @@ class MagiEngine:
             return "No cross-examination occurred."
 
         return "\n".join(answer_lines + evaluation_lines)
+
+    def _council_record(
+        self,
+        verdicts: list[Verdict],
+        answers: list[CrossExaminationAnswer],
+        evaluations: list[SatisfactionEvaluation],
+        reflections: list[Reflection],
+    ) -> str:
+        lines: list[str] = ["ROUND 1 — Independent analysis:"]
+        lines.extend(
+            (
+                f"- {verdict.member_name}: {verdict.vote} "
+                f"({verdict.confidence}%). Reason: {verdict.core_reason}. "
+                f"Risk: {verdict.main_risk}."
+            )
+            for verdict in verdicts
+        )
+
+        lines.append("\nROUND 2 — Cross-examination:")
+        if answers:
+            lines.extend(
+                (
+                    f"- {answer.asker_name} asked {answer.target_name}: "
+                    f"{answer.question} Answer: {answer.answer}"
+                )
+                for answer in answers
+            )
+        else:
+            lines.append("- No routed questions.")
+
+        lines.append("\nROUND 3 — Satisfaction evaluation:")
+        if evaluations:
+            lines.extend(
+                (
+                    f"- {evaluation.asker_name} evaluated {evaluation.target_name}: "
+                    f"{evaluation.satisfaction}. Reason: {evaluation.reason}. "
+                    f"Confidence delta: {evaluation.confidence_delta:+d}."
+                )
+                for evaluation in evaluations
+            )
+        else:
+            lines.append("- No evaluations.")
+
+        lines.append("\nROUND 4 — Reflection:")
+        lines.extend(
+            (
+                f"- {reflection.member_name}: {reflection.vote_before} "
+                f"({reflection.confidence_before}%) -> {reflection.vote_after} "
+                f"({reflection.confidence_after}%). Learned: {reflection.learned}. "
+                f"Reason: {reflection.reason}."
+            )
+            for reflection in reflections
+        )
+
+        return "\n".join(lines)
 
     def _answer_question(
         self,
@@ -380,6 +478,51 @@ class MagiEngine:
                 )
             )
 
+    def chair_dossier(
+        self,
+        proposition: str,
+        verdicts: list[Verdict],
+        answers: list[CrossExaminationAnswer],
+        evaluations: list[SatisfactionEvaluation],
+        reflections: list[Reflection],
+        decision: dict,
+    ) -> DecisionDossier:
+        """Generate a non-voting Chair decision dossier."""
+        vote_split = f"{decision['affirmative']} affirmative / {decision['negative']} negative"
+        model = self.chair_model
+
+        user_prompt = CHAIR_INSTRUCTION.format(
+            proposition=proposition,
+            decision=decision["decision"],
+            vote_split=vote_split,
+            council_record=self._council_record(
+                verdicts=verdicts,
+                answers=answers,
+                evaluations=evaluations,
+                reflections=reflections,
+            ),
+        )
+
+        if self.mock:
+            raw = mock_chair_dossier(decision["decision"], vote_split, user_prompt)
+            model = "mock"
+        else:
+            raw = chat(
+                model=model,
+                system=(
+                    "You are the non-voting Chair of MAGI. "
+                    "You summarize faithfully. You do not add a new vote."
+                ),
+                user=user_prompt,
+            )
+
+        return parse_decision_dossier(
+            raw=raw,
+            model=model,
+            fallback_decision=decision["decision"],
+            fallback_split=vote_split,
+        )
+
     def deliberate(self, proposition: str) -> dict:
         """Run the current council protocol."""
         verdicts = self.independent_analysis(proposition)
@@ -398,6 +541,14 @@ class MagiEngine:
             evaluations=evaluations,
         )
         decision = decide_reflections(reflections)
+        dossier = self.chair_dossier(
+            proposition=proposition,
+            verdicts=verdicts,
+            answers=answers,
+            evaluations=evaluations,
+            reflections=reflections,
+            decision=decision,
+        )
 
         return {
             "proposition": proposition,
@@ -407,6 +558,7 @@ class MagiEngine:
             "evaluations": evaluations,
             "reflections": reflections,
             "decision": decision,
+            "dossier": dossier,
         }
 
 

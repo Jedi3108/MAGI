@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from magi.chair.dossier import DecisionDossier
 from magi.council.verdict import Verdict
 from magi.protocol.examination import CrossExaminationAnswer, SatisfactionEvaluation
 from magi.protocol.reflection import Reflection
@@ -159,3 +160,33 @@ def render_decision(decision: dict) -> None:
         f"{decision['negative']} negative{C.RESET}"
     )
     print(f"{color}{'═' * 72}{C.RESET}\n")
+
+
+def render_dossier(dossier: DecisionDossier) -> None:
+    print(f"\n{C.AMBER}{'═' * 72}{C.RESET}")
+    print(f"{C.AMBER}{C.BOLD}CHAIR DOSSIER :: NON-VOTING SUMMARY{C.RESET}")
+    print(f"{C.AMBER}{'═' * 72}{C.RESET}")
+
+    print(f"\n{C.BOLD}Decision:{C.RESET} {dossier.decision}")
+    print(f"{C.BOLD}Vote split:{C.RESET} {dossier.vote_split}")
+
+    print(f"\n{C.BOLD}Majority reasoning:{C.RESET}")
+    print(f"  {dossier.majority_reasoning}")
+
+    print(f"\n{C.BOLD}Minority reasoning:{C.RESET}")
+    print(f"  {dossier.minority_reasoning}")
+
+    print(f"\n{C.BOLD}Key risks:{C.RESET}")
+    print(f"  {dossier.key_risks}")
+
+    print(f"\n{C.BOLD}Outstanding uncertainties:{C.RESET}")
+    print(f"  {dossier.outstanding_uncertainties}")
+
+    print(f"\n{C.BOLD}Required conditions:{C.RESET}")
+    print(f"  {dossier.required_conditions}")
+
+    print(f"\n{C.BOLD}Recommended next action:{C.RESET}")
+    print(f"  {dossier.recommended_next_action}")
+
+    print(f"\n{C.GREY}chair model: {dossier.model}{C.RESET}")
+    print(f"{C.AMBER}{'═' * 72}{C.RESET}\n")
