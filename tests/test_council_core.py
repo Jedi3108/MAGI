@@ -17,6 +17,7 @@ class TestCouncilCore(unittest.TestCase):
             "Should MAGI preserve minority reports?",
         )
         self.assertEqual(len(result["verdicts"]), 4)
+        self.assertEqual(len(result["reflections"]), 4)
         self.assertIn(
             result["decision"]["decision"],
             {"AFFIRMATIVE", "NEGATIVE", "NO CONSENSUS"},
@@ -70,6 +71,24 @@ class TestCouncilCore(unittest.TestCase):
             )
             self.assertGreaterEqual(evaluation.confidence_delta, -100)
             self.assertLessEqual(evaluation.confidence_delta, 100)
+
+    def test_reflections_update_or_preserve_member_positions(self):
+        engine = MagiEngine(mock=True)
+
+        result = engine.deliberate("Should MAGI preserve minority reports?")
+
+        self.assertEqual(len(result["reflections"]), 4)
+
+        for reflection in result["reflections"]:
+            self.assertTrue(reflection.member_name)
+            self.assertIn(reflection.vote_before, {"AFFIRMATIVE", "NEGATIVE"})
+            self.assertIn(reflection.vote_after, {"AFFIRMATIVE", "NEGATIVE"})
+            self.assertGreaterEqual(reflection.confidence_before, 0)
+            self.assertLessEqual(reflection.confidence_before, 100)
+            self.assertGreaterEqual(reflection.confidence_after, 0)
+            self.assertLessEqual(reflection.confidence_after, 100)
+            self.assertTrue(reflection.learned)
+            self.assertTrue(reflection.reason)
 
 
 if __name__ == "__main__":

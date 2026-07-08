@@ -85,3 +85,41 @@ def mock_evaluation(member_name: str, answer: str, prompt: str) -> str:
             "confidence_delta": confidence_delta,
         }
     )
+
+
+def mock_reflection(
+    member_name: str,
+    current_vote: str,
+    current_confidence: int,
+    prompt: str,
+) -> str:
+    """Return a deterministic fake reflection as JSON."""
+    seed = int(
+        hashlib.sha256(
+            (member_name + current_vote + str(current_confidence) + prompt).encode("utf-8")
+        ).hexdigest(),
+        16,
+    )
+    rng = random.Random(seed)
+
+    delta = rng.randint(-20, 20)
+    confidence_after = max(0, min(100, current_confidence + delta))
+
+    vote_after = current_vote
+    if rng.random() < 0.2:
+        vote_after = "NEGATIVE" if current_vote == "AFFIRMATIVE" else "AFFIRMATIVE"
+
+    return json.dumps(
+        {
+            "learned": (
+                f"[MOCK] {member_name}: The exchange clarified one uncertainty, "
+                "but the conclusion still depends on the member's facet."
+            ),
+            "vote_after_reflection": vote_after,
+            "confidence_after_reflection": confidence_after,
+            "reason": (
+                f"[MOCK] {member_name}: Confidence moved from "
+                f"{current_confidence} to {confidence_after} after reflection."
+            ),
+        }
+    )
