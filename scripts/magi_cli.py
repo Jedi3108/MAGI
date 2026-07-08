@@ -10,8 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from magi.protocol.engine import DEFAULT_MODEL, MagiEngine
-from magi.utils.terminal import render_banner, render_decision, render_verdicts
+from magi.protocol.engine import MagiEngine
+from magi.utils.terminal import (
+    render_banner,
+    render_cross_examination,
+    render_decision,
+    render_verdicts,
+)
 
 
 def main() -> None:
@@ -41,6 +46,7 @@ def main() -> None:
     result = engine.deliberate(proposition)
 
     render_verdicts(result["verdicts"])
+    render_cross_examination(result["answers"])
     render_decision(result["decision"])
 
 

@@ -3,6 +3,7 @@
 import unittest
 
 from magi.protocol.engine import MagiEngine
+from magi.protocol.examination import collect_questions
 
 
 class TestCouncilCore(unittest.TestCase):
@@ -34,6 +35,22 @@ class TestCouncilCore(unittest.TestCase):
             self.assertTrue(verdict.core_reason)
             self.assertTrue(verdict.main_risk)
             self.assertTrue(verdict.can_change_mind_if)
+
+    def test_cross_examination_answers_routed_questions(self):
+        engine = MagiEngine(mock=True)
+
+        result = engine.deliberate("Should MAGI preserve minority reports?")
+
+        questions = collect_questions(result["verdicts"])
+
+        self.assertEqual(len(result["questions"]), len(questions))
+        self.assertEqual(len(result["answers"]), len(questions))
+
+        for answer in result["answers"]:
+            self.assertTrue(answer.asker_name)
+            self.assertTrue(answer.target_name)
+            self.assertTrue(answer.question)
+            self.assertTrue(answer.answer)
 
 
 if __name__ == "__main__":

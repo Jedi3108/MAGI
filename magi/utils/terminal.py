@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from magi.council.verdict import Verdict
+from magi.protocol.examination import CrossExaminationAnswer
 
 
 class C:
@@ -61,6 +62,29 @@ def render_verdicts(verdicts: list[Verdict]) -> None:
         print(f"  Risk:   {verdict.main_risk}")
         print(f"  Asks:   {verdict.question_for} — {verdict.question}")
         print(f"  Would change mind if: {verdict.can_change_mind_if}")
+
+
+def render_cross_examination(answers: list[CrossExaminationAnswer]) -> None:
+    print(f"\n{C.GREY}{'─' * 72}{C.RESET}")
+    print(f"{C.BOLD}ROUND 2 :: CROSS-EXAMINATION{C.RESET}")
+    print(f"{C.GREY}{'─' * 72}{C.RESET}")
+
+    if not answers:
+        print(f"{C.GREY}No routed questions. Cross-examination skipped.{C.RESET}")
+        return
+
+    for answer in answers:
+        asker_color = COLORS.get(answer.asker_name, C.GREY)
+        target_color = COLORS.get(answer.target_name, C.GREY)
+
+        print(
+            f"\n{asker_color}{C.BOLD}{answer.asker_name}{C.RESET} "
+            f"{C.GREY}asks{C.RESET} "
+            f"{target_color}{C.BOLD}{answer.target_name}{C.RESET}"
+        )
+        print(f"  Q: {answer.question}")
+        print(f"  A: {answer.answer}")
+        print(f"  {C.GREY}model: {answer.model}{C.RESET}")
 
 
 def render_decision(decision: dict) -> None:

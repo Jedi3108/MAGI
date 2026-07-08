@@ -6,8 +6,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 from magi.council.members import COUNCIL, CouncilMember
 from magi.council.verdict import Verdict, parse_verdict
-from magi.models.mock import mock_verdict
+from magi.models.mock import mock_answer, mock_verdict
 from magi.models.ollama import chat, installed_models
+from magi.protocol.examination import (
+    CrossExaminationAnswer,
+    RoutedQuestion,
+    collect_questions,
+    parse_cross_examination_answer,
+)
 
 
 DEFAULT_MODEL = "llama3.2"
@@ -31,6 +37,30 @@ Required schema:
 
 Proposition:
 {proposition}
+"""
+
+
+ANSWER_INSTRUCTION = """
+You are in Round 2 of the MAGI deliberation protocol: Cross-Examination.
+
+The proposition is:
+{proposition}
+
+Round 1 council context:
+{council_context}
+
+A question was addressed to you by {asker_name}:
+
+{question}
+
+Answer the question directly through your council identity.
+
+Return ONLY a JSON object. No prose. No markdown.
+
+Required schema:
+{{
+  "answer": "concise answer, two to four sentences"
+}}
 """
 
 
@@ -83,14 +113,90 @@ class MagiEngine:
         with ThreadPoolExecutor(max_workers=len(COUNCIL)) as pool:
             return list(pool.map(lambda member: self._ask_member(member, proposition), COUNCIL))
 
+    def _member_by_name(self, name: str) -> CouncilMember:
+        for member in COUNCIL:
+            if member.name == name:
+                return member
+        raise ValueError(f"Unknown council member: {name}")
+
+    def _council_context(self, verdicts: list[Verdict]) -> str:
+        return "\n".join(
+            (
+                f"- {verdict.member_name}: {verdict.vote} "
+                f"({verdict.confidence}%). "
+                f"Reason: {verdict.core_reason} "
+                f"Risk: {verdict.main_risk}"
+            )
+            for verdict in verdicts
+        )
+
+    def _answer_question(
+        self,
+        question: RoutedQuestion,
+        proposition: str,
+        verdicts: list[Verdict],
+    ) -> CrossExaminationAnswer:
+        target = self._member_by_name(question.target_name)
+        model = self.models[target.name]
+
+        user_prompt = ANSWER_INSTRUCTION.format(
+            proposition=proposition,
+            council_context=self._council_context(verdicts),
+            asker_name=question.asker_name,
+            question=question.question,
+        )
+
+        if self.mock:
+            raw = mock_answer(target.name, question.question, user_prompt)
+            model = "mock"
+        else:
+            raw = chat(model=model, system=target.persona, user=user_prompt)
+
+        return parse_cross_examination_answer(
+            question=question,
+            raw=raw,
+            model=model,
+        )
+
+    def cross_examination(
+        self,
+        proposition: str,
+        verdicts: list[Verdict],
+    ) -> tuple[list[RoutedQuestion], list[CrossExaminationAnswer]]:
+        """Route questions and collect answers from addressed members."""
+        questions = collect_questions(verdicts)
+
+        if not questions:
+            return questions, []
+
+        with ThreadPoolExecutor(max_workers=len(questions)) as pool:
+            answers = list(
+                pool.map(
+                    lambda question: self._answer_question(
+                        question=question,
+                        proposition=proposition,
+                        verdicts=verdicts,
+                    ),
+                    questions,
+                )
+            )
+
+        return questions, answers
+
     def deliberate(self, proposition: str) -> dict:
         """Run the current council protocol."""
         verdicts = self.independent_analysis(proposition)
+        questions, answers = self.cross_examination(
+            proposition=proposition,
+            verdicts=verdicts,
+        )
         decision = decide(verdicts)
 
         return {
             "proposition": proposition,
             "verdicts": verdicts,
+            "questions": questions,
+            "answers": answers,
             "decision": decision,
         }
 
