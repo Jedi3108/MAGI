@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local files
+.env
+*.log
+.DS_Store
+
+# MAGI runtime
+logs/
+traces/
+memory/local/
+models/local/
