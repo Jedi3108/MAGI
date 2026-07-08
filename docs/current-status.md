@@ -1,43 +1,66 @@
 # Current Status
 
-## v0.1.0-alpha
+Current release target: v0.2.0-alpha  
+Branch status: release preparation  
+Primary branch: develop  
+Stable branch: main
 
-MAGI currently supports a complete mock-mode deliberation loop.
+## Project state
+
+MAGI is currently a local-first deliberation engine with a four-member council and a non-voting Chair.
+
+The system can run a full deliberation protocol using either deterministic mock outputs or a real local Ollama model.
 
 ## Implemented
 
-- Four permanent council members
-- Independent analysis
-- Directed cross-examination
-- Satisfaction evaluation
-- Reflection round
-- Final decision after reflection
-- Non-voting Chair dossier
+- Permanent council identities:
+  - MELCHIOR — The Scientist
+  - BALTHASAR — The Mother
+  - CASPER — The Woman
+  - ARTABAN — The Man
+- Non-voting Chair
+- Round 1 independent analysis
+- Round 2 cross-examination
+- Round 3 satisfaction evaluation
+- Round 4 reflection
+- Final decision tally
+- Chair decision dossier
 - Mock backend
 - Ollama backend
-- Terminal rendering
-- Unit tests
+- Ollama readiness checks
+- Installed model listing
+- JSON-mode support
+- Robust JSON parsing helpers
+- Parser fallbacks for malformed model output
+- Protocol progress indicators
+- Improved council prompts
+- Self-question prevention
+- Structured final reflected vote record for the Chair
+- Unit tests for core protocol behavior
 
-## Not Yet Implemented
+## Verified
 
-- Persistent memory
-- Decision archive
-- Specialist advisors
-- Tool execution
-- Worker agents
-- User interface
-- Trust scoring
-- Real-world action layer
-
-## Current Use
-
-Run a mock deliberation:
+The system has been verified with:
 
 ```bash
-python scripts/magi_cli.py --mock "Should MAGI preserve minority reports?"
-un tests:
-
+python -m compileall magi scripts
 python -m unittest discover tests
-Development Rule
+python scripts/magi_cli.py --mock "Should MAGI preserve minority reports?"
+python scripts/magi_cli.py --model llama3.2 "Should MAGI preserve minority reports?"
+Not yet implemented
+Long-term memory
+External tools
+Worker execution layer
+Web or desktop UI
+Multi-model council optimization
+Persistent deliberation logs
+Dataset or benchmark evaluation
+Human review workflow
+Current development priority
 
-New intelligence features should not be added until the protocol remains stable, tested, and documented.
+Prepare and tag v0.2.0-alpha.
+
+After v0.2.0-alpha, the next likely development focus is either:
+
+persistent deliberation logs, or
+multi-model council support.

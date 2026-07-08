@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from typing import Callable
 
 from magi.chair.dossier import DecisionDossier, parse_decision_dossier
+from magi.chair.record import build_structured_chair_record
 from magi.council.members import COUNCIL, CouncilMember
 from magi.council.verdict import Verdict, parse_verdict
 from magi.models.mock import (
@@ -14,7 +16,12 @@ from magi.models.mock import (
     mock_reflection,
     mock_verdict,
 )
-from magi.models.ollama import chat, installed_models
+from magi.models.ollama import (
+    OllamaModelNotFoundError,
+    chat,
+    installed_models,
+    resolve_model_name,
+)
 from magi.protocol.examination import (
     CrossExaminationAnswer,
     RoutedQuestion,
@@ -30,19 +37,42 @@ DEFAULT_MODEL = "llama3.2"
 
 
 JUDGE_INSTRUCTION = """
-Evaluate the proposition strictly through your council identity.
+You are taking part in Round 1 of the MAGI deliberation protocol: Independent Analysis.
 
-Return ONLY a JSON object. No prose. No markdown.
+Evaluate the proposition strictly through your own council identity.
+
+Do not imitate the other council members.
+Do not give a generic assistant answer.
+Do not force consensus.
+Disagreement is allowed.
+A minority position is valuable if it exposes a real concern.
+
+Use your facet to produce a concrete judgment:
+- MELCHIOR cares about evidence, truth, uncertainty, and technical correctness.
+- BALTHASAR cares about safety, harm, care, stability, and sustainability.
+- CASPER cares about individuality, dignity, desire, aesthetics, and suppressed perspectives.
+- ARTABAN cares about action, duty, execution, accountability, and consequences.
+
+Confidence calibration:
+- 50 means genuinely uncertain.
+- 60 means weak lean.
+- 70 means clear but revisable position.
+- 80 means strong position with some uncertainty.
+- 90+ should be rare and requires unusually strong justification.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
   "vote": "AFFIRMATIVE" | "NEGATIVE",
   "confidence": 0-100,
-  "core_reason": "one or two sentences",
-  "main_risk": "one sentence",
+  "core_reason": "one concrete reason, written in your council voice",
+  "main_risk": "one concrete failure mode or danger",
   "question_for": "MELCHIOR" | "BALTHASAR" | "CASPER" | "ARTABAN" | "NO QUESTIONS",
-  "question": "one important question, or NO QUESTIONS",
-  "can_change_mind_if": "what evidence or argument could change your vote"
+  "question": "one sharp question to another member, or NO QUESTIONS",
+  "can_change_mind_if": "specific evidence, condition, or argument that could change your vote"
 }}
 
 Proposition:
@@ -63,13 +93,22 @@ A question was addressed to you by {asker_name}:
 
 {question}
 
-Answer the question directly through your council identity.
+Answer directly through your council identity.
 
-Return ONLY a JSON object. No prose. No markdown.
+Rules:
+- Answer the actual question, not a different one.
+- Give one clear answer and one supporting reason.
+- If the asker raised a valid concern, acknowledge it.
+- Avoid slogans, filler, and generic safety language.
+- Do not change your role.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
-  "answer": "concise answer, two to four sentences"
+  "answer": "direct answer, two to four sentences"
 }}
 """
 
@@ -88,7 +127,16 @@ You asked {target_name} this question:
 
 Evaluate whether the answer satisfied your concern.
 
-Return ONLY a JSON object. No prose. No markdown.
+Rules:
+- Judge the answer from your own council identity.
+- Do not be polite by default.
+- Do not be hostile by default.
+- Explain what was resolved and what remains unresolved.
+- Confidence deltas should usually be modest unless the answer strongly changes your position.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
@@ -114,13 +162,26 @@ Risk: {main_risk}
 Council deliberation context:
 {deliberation_context}
 
-Reflect on whether the exchange changed your understanding.
+Reflect on the exchange.
 
-Return ONLY a JSON object. No prose. No markdown.
+Rules:
+- State what you genuinely learned, if anything.
+- Preserve your vote if the exchange did not defeat your core reason.
+- Change your vote only if the debate exposed a stronger reason.
+- Adjust confidence realistically.
+- Your learned statement, final vote, confidence, and reason must not contradict each other.
+- If your reasoning now supports the opposite vote, change the vote or explain why you still reject it.
+- Do not increase confidence when your own reason emphasizes unresolved uncertainty.
+- Avoid repeating your original answer word-for-word.
+- Stay within your council identity.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
-  "learned": "one or two sentences about what you learned",
+  "learned": "one or two sentences about what changed in your understanding",
   "vote_after_reflection": "AFFIRMATIVE" | "NEGATIVE",
   "confidence_after_reflection": 0-100,
   "reason": "one or two sentences explaining why your vote/confidence changed or stayed the same"
@@ -133,7 +194,8 @@ You are the non-voting Chair of the MAGI council.
 
 You do not vote.
 You do not add a new opinion.
-Your task is to summarize the actual deliberation into a decision dossier.
+You do not invent arguments that were not present.
+Your task is to turn the actual deliberation into a clear decision dossier.
 
 The proposition is:
 {proposition}
@@ -144,20 +206,42 @@ Final decision:
 Vote split:
 {vote_split}
 
-Full council record:
+Authoritative final reflected vote record:
+{final_vote_record}
+
+Full council transcript:
 {council_record}
 
-Return ONLY a JSON object. No prose. No markdown.
+The authoritative final reflected vote record overrides the transcript if they appear to conflict.
+The final reflected votes are authoritative.
+Use each member's final reflected vote and final reflected confidence when summarizing positions.
+Do not treat Round 1 votes or Round 1 confidence values as final positions.
+Do not attribute AFFIRMATIVE reasoning to a member whose final reflected vote is NEGATIVE, or NEGATIVE reasoning to a member whose final reflected vote is AFFIRMATIVE.
+
+Dossier rules:
+- Base vote attribution on the authoritative final reflected vote record, not on inference from prose.
+- If the decision is AFFIRMATIVE or NEGATIVE, summarize the majority reasoning faithfully.
+- If the decision is NO CONSENSUS, state that no majority exists and summarize the competing positions instead.
+- Preserve minority reasoning if any member dissented.
+- If there is no minority after reflection, say so clearly.
+- Identify unresolved questions without pretending they are solved.
+- Never leave dossier fields empty. If none exist, write a clear sentence such as: None identified in the council record.
+- Recommended next action must be concrete and operational.
+- Write in clean professional language.
+
+Return ONLY one valid JSON object.
+No prose, no markdown, no comments, no trailing text.
+All string values must be plain text.
 
 Required schema:
 {{
   "decision": "AFFIRMATIVE" | "NEGATIVE" | "NO CONSENSUS",
   "vote_split": "text summary of the final vote split",
-  "majority_reasoning": "concise summary of the majority reasoning",
-  "minority_reasoning": "concise summary of the minority reasoning, or state if none exists",
+  "majority_reasoning": "summary based on final reflected votes only; if NO CONSENSUS: state that no majority exists and summarize the competing final positions",
+  "minority_reasoning": "summary based on final reflected votes only; if NO CONSENSUS: summarize the unresolved opposing final positions",
   "key_risks": "main risks identified by the council",
-  "outstanding_uncertainties": "what remains unresolved",
-  "required_conditions": "conditions under which the decision should be accepted",
+  "outstanding_uncertainties": "what remains unresolved, or: None identified in the council record",
+  "required_conditions": "conditions under which the decision should be accepted, or: None identified in the council record",
   "recommended_next_action": "one concrete next step"
 }}
 """
@@ -171,30 +255,96 @@ class MagiEngine:
         model: str | None = None,
         mock: bool = False,
         same: bool = False,
+        progress: Callable[[str], None] | None = None,
         default_model: str = DEFAULT_MODEL,
     ) -> None:
         self.mock = mock
         self.default_model = default_model
+        self.progress = progress
+        self.model_notes: list[str] = []
+
         self.models = self._resolve_models(model=model, same=same)
-        self.chair_model = model or default_model
+        self.chair_model = "mock" if mock else self._resolve_chair_model(model=model)
+
+    def _progress(self, message: str) -> None:
+        """Emit a progress message if a progress callback is configured."""
+        if self.progress:
+            self.progress(message)
+
+    def _resolve_required_model(self, requested: str, available: list[str]) -> str:
+        resolved = resolve_model_name(requested, available)
+        if not resolved:
+            raise OllamaModelNotFoundError(requested=requested, available=available)
+        return resolved
+
+    def _resolve_chair_model(self, model: str | None) -> str:
+        if self.mock:
+            return "mock"
+
+        available = installed_models()
+        requested = model or self.default_model
+
+        resolved = resolve_model_name(requested, available)
+        if resolved:
+            return resolved
+
+        if available:
+            fallback = available[0]
+            self.model_notes.append(
+                f"Chair fallback: requested {requested!r}, using {fallback!r}."
+            )
+            return fallback
+
+        raise OllamaModelNotFoundError(requested=requested, available=available)
 
     def _resolve_models(self, model: str | None, same: bool) -> dict[str, str]:
-        if model:
-            return {member.name: model for member in COUNCIL}
-
-        if same or self.mock:
+        if self.mock:
             return {member.name: self.default_model for member in COUNCIL}
 
         available = installed_models()
-        resolved: dict[str, str] = {}
+
+        if model:
+            resolved = self._resolve_required_model(model, available)
+            return {member.name: resolved for member in COUNCIL}
+
+        if same:
+            resolved = self._resolve_required_model(self.default_model, available)
+            return {member.name: resolved for member in COUNCIL}
+
+        resolved_models: dict[str, str] = {}
 
         for member in COUNCIL:
-            if member.preferred_model in available:
-                resolved[member.name] = member.preferred_model
-            else:
-                resolved[member.name] = self.default_model
+            preferred = resolve_model_name(member.preferred_model, available)
 
-        return resolved
+            if preferred:
+                resolved_models[member.name] = preferred
+                continue
+
+            default = resolve_model_name(self.default_model, available)
+
+            if default:
+                resolved_models[member.name] = default
+                self.model_notes.append(
+                    f"{member.name} fallback: preferred {member.preferred_model!r}, "
+                    f"using default {default!r}."
+                )
+                continue
+
+            if available:
+                fallback = available[0]
+                resolved_models[member.name] = fallback
+                self.model_notes.append(
+                    f"{member.name} fallback: preferred {member.preferred_model!r} "
+                    f"and default {self.default_model!r} unavailable, using {fallback!r}."
+                )
+                continue
+
+            raise OllamaModelNotFoundError(
+                requested=self.default_model,
+                available=available,
+            )
+
+        return resolved_models
 
     def _ask_member(self, member: CouncilMember, proposition: str) -> Verdict:
         model = self.models[member.name]
@@ -204,7 +354,7 @@ class MagiEngine:
             raw = mock_verdict(member.name, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=member.persona, user=user_prompt)
+            raw = chat(model=model, system=member.persona, user=user_prompt, response_format="json")
 
         return parse_verdict(member=member, raw=raw, model=model)
 
@@ -338,7 +488,7 @@ class MagiEngine:
             raw = mock_answer(target.name, question.question, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=target.persona, user=user_prompt)
+            raw = chat(model=model, system=target.persona, user=user_prompt, response_format="json")
 
         return parse_cross_examination_answer(
             question=question,
@@ -390,7 +540,7 @@ class MagiEngine:
             raw = mock_evaluation(asker.name, answer.answer, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=asker.persona, user=user_prompt)
+            raw = chat(model=model, system=asker.persona, user=user_prompt, response_format="json")
 
         return parse_satisfaction_evaluation(
             answer=answer,
@@ -447,7 +597,7 @@ class MagiEngine:
             )
             model = "mock"
         else:
-            raw = chat(model=model, system=member.persona, user=user_prompt)
+            raw = chat(model=model, system=member.persona, user=user_prompt, response_format="json")
 
         return parse_reflection(
             member=member,
@@ -491,10 +641,13 @@ class MagiEngine:
         vote_split = f"{decision['affirmative']} affirmative / {decision['negative']} negative"
         model = self.chair_model
 
+        final_vote_record = build_structured_chair_record(reflections)
+
         user_prompt = CHAIR_INSTRUCTION.format(
             proposition=proposition,
             decision=decision["decision"],
             vote_split=vote_split,
+            final_vote_record=final_vote_record,
             council_record=self._council_record(
                 verdicts=verdicts,
                 answers=answers,
@@ -514,6 +667,7 @@ class MagiEngine:
                     "You summarize faithfully. You do not add a new vote."
                 ),
                 user=user_prompt,
+                response_format="json",
             )
 
         return parse_decision_dossier(
@@ -525,22 +679,33 @@ class MagiEngine:
 
     def deliberate(self, proposition: str) -> dict:
         """Run the current council protocol."""
+        self._progress("Round 1/5 — independent analysis")
         verdicts = self.independent_analysis(proposition)
+
+        self._progress("Round 2/5 — cross-examination")
         questions, answers = self.cross_examination(
             proposition=proposition,
             verdicts=verdicts,
         )
+
+        self._progress("Round 3/5 — satisfaction evaluation")
         evaluations = self.satisfaction_evaluation(
             proposition=proposition,
             answers=answers,
         )
+
+        self._progress("Round 4/5 — reflection")
         reflections = self.reflection_round(
             proposition=proposition,
             verdicts=verdicts,
             answers=answers,
             evaluations=evaluations,
         )
+
+        self._progress("Decision — tallying reflected votes")
         decision = decide_reflections(reflections)
+
+        self._progress("Round 5/5 — chair dossier")
         dossier = self.chair_dossier(
             proposition=proposition,
             verdicts=verdicts,
@@ -559,6 +724,7 @@ class MagiEngine:
             "reflections": reflections,
             "decision": decision,
             "dossier": dossier,
+            "model_notes": self.model_notes,
         }
 
 

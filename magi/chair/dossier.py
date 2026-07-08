@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
+
+from magi.utils.json_tools import extract_json_object, text_field
 
 
 @dataclass
@@ -22,24 +23,12 @@ class DecisionDossier:
     raw: str = ""
 
 
-def _extract_json(raw: str) -> dict:
-    text = raw.strip()
-    start = text.find("{")
-    end = text.rfind("}")
-
-    if start == -1 or end == -1 or end <= start:
-        return {}
-
-    try:
-        return json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return {}
-
-
 def _clean_decision(value: object, fallback: str) -> str:
     decision = str(value or fallback).strip().upper()
+
     if decision in {"AFFIRMATIVE", "NEGATIVE", "NO CONSENSUS"}:
         return decision
+
     return fallback
 
 
@@ -50,27 +39,50 @@ def parse_decision_dossier(
     fallback_split: str,
 ) -> DecisionDossier:
     """Parse the Chair output into a DecisionDossier."""
-    obj = _extract_json(raw)
+    obj = extract_json_object(raw)
 
     return DecisionDossier(
-        decision=_clean_decision(obj.get("decision"), fallback_decision),
-        vote_split=str(obj.get("vote_split") or fallback_split).strip(),
-        majority_reasoning=str(
-            obj.get("majority_reasoning") or "No majority reasoning provided."
-        ).strip(),
-        minority_reasoning=str(
-            obj.get("minority_reasoning") or "No minority reasoning provided."
-        ).strip(),
-        key_risks=str(obj.get("key_risks") or "No key risks provided.").strip(),
-        outstanding_uncertainties=str(
-            obj.get("outstanding_uncertainties") or "No outstanding uncertainties provided."
-        ).strip(),
-        required_conditions=str(
-            obj.get("required_conditions") or "No required conditions provided."
-        ).strip(),
-        recommended_next_action=str(
-            obj.get("recommended_next_action") or "No next action provided."
-        ).strip(),
+        decision=_clean_decision(
+            text_field(obj, raw, "decision", fallback_decision),
+            fallback_decision,
+        ),
+        vote_split=text_field(obj, raw, "vote_split", fallback_split),
+        majority_reasoning=text_field(
+            obj,
+            raw,
+            "majority_reasoning",
+            "No valid majority reasoning provided.",
+        ),
+        minority_reasoning=text_field(
+            obj,
+            raw,
+            "minority_reasoning",
+            "No valid minority reasoning provided.",
+        ),
+        key_risks=text_field(
+            obj,
+            raw,
+            "key_risks",
+            "No valid key risks provided.",
+        ),
+        outstanding_uncertainties=text_field(
+            obj,
+            raw,
+            "outstanding_uncertainties",
+            "No valid outstanding uncertainties provided.",
+        ),
+        required_conditions=text_field(
+            obj,
+            raw,
+            "required_conditions",
+            "No valid required conditions provided.",
+        ),
+        recommended_next_action=text_field(
+            obj,
+            raw,
+            "recommended_next_action",
+            "No valid next action provided.",
+        ),
         model=model,
         raw=raw,
     )
