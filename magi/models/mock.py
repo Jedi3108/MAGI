@@ -37,3 +37,25 @@ def mock_verdict(member_name: str, prompt: str) -> str:
             "can_change_mind_if": "[MOCK] Better evidence changes the expected outcome.",
         }
     )
+
+
+def mock_answer(member_name: str, question: str, prompt: str) -> str:
+    """Return a deterministic fake cross-examination answer as JSON."""
+    seed = int(
+        hashlib.sha256((member_name + question + prompt).encode("utf-8")).hexdigest(),
+        16,
+    )
+    rng = random.Random(seed)
+
+    templates = [
+        "The fragile assumption is that the current evidence is complete enough to justify the vote.",
+        "The answer depends on whether the downside risk is reversible or irreversible.",
+        "My position would weaken if the proposed action creates hidden long-term cost.",
+        "The key uncertainty is whether the council is optimizing for truth, safety, autonomy, or execution.",
+    ]
+
+    return json.dumps(
+        {
+            "answer": f"[MOCK] {member_name}: {rng.choice(templates)}",
+        }
+    )
