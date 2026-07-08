@@ -59,3 +59,29 @@ def mock_answer(member_name: str, question: str, prompt: str) -> str:
             "answer": f"[MOCK] {member_name}: {rng.choice(templates)}",
         }
     )
+
+
+def mock_evaluation(member_name: str, answer: str, prompt: str) -> str:
+    """Return a deterministic fake satisfaction evaluation as JSON."""
+    seed = int(
+        hashlib.sha256((member_name + answer + prompt).encode("utf-8")).hexdigest(),
+        16,
+    )
+    rng = random.Random(seed)
+
+    satisfaction = rng.choice(
+        ["SATISFIED", "PARTIALLY SATISFIED", "NOT SATISFIED"]
+    )
+    confidence_delta = rng.randint(-15, 15)
+
+    return json.dumps(
+        {
+            "satisfaction": satisfaction,
+            "reason": (
+                f"[MOCK] {member_name}: The answer was judged as "
+                f"{satisfaction.lower()} because it addressed some uncertainty "
+                "but may not resolve the entire decision."
+            ),
+            "confidence_delta": confidence_delta,
+        }
+    )

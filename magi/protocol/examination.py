@@ -9,6 +9,13 @@ from magi.council.members import VALID_MEMBER_NAMES
 from magi.council.verdict import Verdict
 
 
+VALID_SATISFACTION = {
+    "SATISFIED",
+    "PARTIALLY SATISFIED",
+    "NOT SATISFIED",
+}
+
+
 @dataclass(frozen=True)
 class RoutedQuestion:
     """A question asked by one council member to another."""
@@ -26,6 +33,21 @@ class CrossExaminationAnswer:
     target_name: str
     question: str
     answer: str
+    model: str
+    raw: str = ""
+
+
+@dataclass
+class SatisfactionEvaluation:
+    """The asker's evaluation of a cross-examination answer."""
+
+    asker_name: str
+    target_name: str
+    question: str
+    answer: str
+    satisfaction: str
+    reason: str
+    confidence_delta: int
     model: str
     raw: str = ""
 
@@ -75,6 +97,31 @@ def _extract_json(raw: str) -> dict:
         return {}
 
 
+def _clean_satisfaction(value: object) -> str:
+    text = str(value or "").strip().upper().replace("_", " ")
+
+    if text in VALID_SATISFACTION:
+        return text
+
+    if "PARTIAL" in text:
+        return "PARTIALLY SATISFIED"
+
+    if "NOT" in text or "UNSATISFIED" in text:
+        return "NOT SATISFIED"
+
+    if "SATISFIED" in text:
+        return "SATISFIED"
+
+    return "PARTIALLY SATISFIED"
+
+
+def _clean_confidence_delta(value: object) -> int:
+    try:
+        return max(-100, min(100, int(value)))
+    except (TypeError, ValueError):
+        return 0
+
+
 def parse_cross_examination_answer(
     question: RoutedQuestion,
     raw: str,
@@ -89,6 +136,27 @@ def parse_cross_examination_answer(
         target_name=question.target_name,
         question=question.question,
         answer=answer,
+        model=model,
+        raw=raw,
+    )
+
+
+def parse_satisfaction_evaluation(
+    answer: CrossExaminationAnswer,
+    raw: str,
+    model: str,
+) -> SatisfactionEvaluation:
+    """Parse the asker's evaluation of an answer."""
+    obj = _extract_json(raw)
+
+    return SatisfactionEvaluation(
+        asker_name=answer.asker_name,
+        target_name=answer.target_name,
+        question=answer.question,
+        answer=answer.answer,
+        satisfaction=_clean_satisfaction(obj.get("satisfaction")),
+        reason=str(obj.get("reason") or raw[:500]).strip(),
+        confidence_delta=_clean_confidence_delta(obj.get("confidence_delta")),
         model=model,
         raw=raw,
     )

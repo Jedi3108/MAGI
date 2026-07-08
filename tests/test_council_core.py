@@ -52,6 +52,25 @@ class TestCouncilCore(unittest.TestCase):
             self.assertTrue(answer.question)
             self.assertTrue(answer.answer)
 
+    def test_satisfaction_evaluations_match_answers(self):
+        engine = MagiEngine(mock=True)
+
+        result = engine.deliberate("Should MAGI preserve minority reports?")
+
+        self.assertEqual(len(result["evaluations"]), len(result["answers"]))
+
+        for evaluation in result["evaluations"]:
+            self.assertTrue(evaluation.asker_name)
+            self.assertTrue(evaluation.target_name)
+            self.assertTrue(evaluation.question)
+            self.assertTrue(evaluation.answer)
+            self.assertIn(
+                evaluation.satisfaction,
+                {"SATISFIED", "PARTIALLY SATISFIED", "NOT SATISFIED"},
+            )
+            self.assertGreaterEqual(evaluation.confidence_delta, -100)
+            self.assertLessEqual(evaluation.confidence_delta, 100)
+
 
 if __name__ == "__main__":
     unittest.main()

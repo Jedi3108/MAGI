@@ -6,13 +6,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 from magi.council.members import COUNCIL, CouncilMember
 from magi.council.verdict import Verdict, parse_verdict
-from magi.models.mock import mock_answer, mock_verdict
+from magi.models.mock import mock_answer, mock_evaluation, mock_verdict
 from magi.models.ollama import chat, installed_models
 from magi.protocol.examination import (
     CrossExaminationAnswer,
     RoutedQuestion,
+    SatisfactionEvaluation,
     collect_questions,
     parse_cross_examination_answer,
+    parse_satisfaction_evaluation,
 )
 
 
@@ -60,6 +62,31 @@ Return ONLY a JSON object. No prose. No markdown.
 Required schema:
 {{
   "answer": "concise answer, two to four sentences"
+}}
+"""
+
+
+EVALUATION_INSTRUCTION = """
+You are in Round 3 of the MAGI deliberation protocol: Satisfaction Evaluation.
+
+The proposition is:
+{proposition}
+
+You asked {target_name} this question:
+{question}
+
+{target_name} answered:
+{answer}
+
+Evaluate whether the answer satisfied your concern.
+
+Return ONLY a JSON object. No prose. No markdown.
+
+Required schema:
+{{
+  "satisfaction": "SATISFIED" | "PARTIALLY SATISFIED" | "NOT SATISFIED",
+  "reason": "one or two sentences explaining your evaluation",
+  "confidence_delta": -100 to 100
 }}
 """
 
@@ -183,12 +210,63 @@ class MagiEngine:
 
         return questions, answers
 
+    def _evaluate_answer(
+        self,
+        answer: CrossExaminationAnswer,
+        proposition: str,
+    ) -> SatisfactionEvaluation:
+        asker = self._member_by_name(answer.asker_name)
+        model = self.models[asker.name]
+
+        user_prompt = EVALUATION_INSTRUCTION.format(
+            proposition=proposition,
+            target_name=answer.target_name,
+            question=answer.question,
+            answer=answer.answer,
+        )
+
+        if self.mock:
+            raw = mock_evaluation(asker.name, answer.answer, user_prompt)
+            model = "mock"
+        else:
+            raw = chat(model=model, system=asker.persona, user=user_prompt)
+
+        return parse_satisfaction_evaluation(
+            answer=answer,
+            raw=raw,
+            model=model,
+        )
+
+    def satisfaction_evaluation(
+        self,
+        proposition: str,
+        answers: list[CrossExaminationAnswer],
+    ) -> list[SatisfactionEvaluation]:
+        """Ask original questioners to evaluate whether answers satisfied them."""
+        if not answers:
+            return []
+
+        with ThreadPoolExecutor(max_workers=len(answers)) as pool:
+            return list(
+                pool.map(
+                    lambda answer: self._evaluate_answer(
+                        answer=answer,
+                        proposition=proposition,
+                    ),
+                    answers,
+                )
+            )
+
     def deliberate(self, proposition: str) -> dict:
         """Run the current council protocol."""
         verdicts = self.independent_analysis(proposition)
         questions, answers = self.cross_examination(
             proposition=proposition,
             verdicts=verdicts,
+        )
+        evaluations = self.satisfaction_evaluation(
+            proposition=proposition,
+            answers=answers,
         )
         decision = decide(verdicts)
 
@@ -197,6 +275,7 @@ class MagiEngine:
             "verdicts": verdicts,
             "questions": questions,
             "answers": answers,
+            "evaluations": evaluations,
             "decision": decision,
         }
 
