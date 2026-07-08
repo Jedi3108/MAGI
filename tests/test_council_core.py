@@ -90,6 +90,24 @@ class TestCouncilCore(unittest.TestCase):
             self.assertTrue(reflection.learned)
             self.assertTrue(reflection.reason)
 
+    def test_chair_dossier_exists_and_summarizes_decision(self):
+        engine = MagiEngine(mock=True)
+
+        result = engine.deliberate("Should MAGI preserve minority reports?")
+        dossier = result["dossier"]
+
+        self.assertIn(
+            dossier.decision,
+            {"AFFIRMATIVE", "NEGATIVE", "NO CONSENSUS"},
+        )
+        self.assertTrue(dossier.vote_split)
+        self.assertTrue(dossier.majority_reasoning)
+        self.assertTrue(dossier.minority_reasoning)
+        self.assertTrue(dossier.key_risks)
+        self.assertTrue(dossier.outstanding_uncertainties)
+        self.assertTrue(dossier.required_conditions)
+        self.assertTrue(dossier.recommended_next_action)
+
 
 if __name__ == "__main__":
     unittest.main()

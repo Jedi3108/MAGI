@@ -15,6 +15,7 @@ from magi.utils.terminal import (
     render_banner,
     render_cross_examination,
     render_decision,
+    render_dossier,
     render_reflections,
     render_satisfaction_evaluations,
     render_verdicts,
@@ -44,6 +45,7 @@ def main() -> None:
     print("Council model assignment:")
     for member_name, model in engine.models.items():
         print(f"  {member_name:<10} -> {model}")
+    print(f"  {'CHAIR':<10} -> {'mock' if args.mock else engine.chair_model}")
 
     result = engine.deliberate(proposition)
 
@@ -52,6 +54,7 @@ def main() -> None:
     render_satisfaction_evaluations(result["evaluations"])
     render_reflections(result["reflections"])
     render_decision(result["decision"])
+    render_dossier(result["dossier"])
 
 
 if __name__ == "__main__":
