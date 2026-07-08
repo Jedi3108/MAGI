@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 from magi.council.members import VALID_MEMBER_NAMES
 from magi.council.verdict import Verdict
+from magi.utils.json_tools import extract_json_object, int_field, text_field
 
 
 VALID_SATISFACTION = {
@@ -83,20 +83,6 @@ def collect_questions(verdicts: list[Verdict]) -> list[RoutedQuestion]:
     return questions
 
 
-def _extract_json(raw: str) -> dict:
-    text = raw.strip()
-    start = text.find("{")
-    end = text.rfind("}")
-
-    if start == -1 or end == -1 or end <= start:
-        return {}
-
-    try:
-        return json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return {}
-
-
 def _clean_satisfaction(value: object) -> str:
     text = str(value or "").strip().upper().replace("_", " ")
 
@@ -115,27 +101,19 @@ def _clean_satisfaction(value: object) -> str:
     return "PARTIALLY SATISFIED"
 
 
-def _clean_confidence_delta(value: object) -> int:
-    try:
-        return max(-100, min(100, int(value)))
-    except (TypeError, ValueError):
-        return 0
-
-
 def parse_cross_examination_answer(
     question: RoutedQuestion,
     raw: str,
     model: str,
 ) -> CrossExaminationAnswer:
     """Parse a target member's answer."""
-    obj = _extract_json(raw)
-    answer = str(obj.get("answer") or raw[:500]).strip()
+    obj = extract_json_object(raw)
 
     return CrossExaminationAnswer(
         asker_name=question.asker_name,
         target_name=question.target_name,
         question=question.question,
-        answer=answer,
+        answer=text_field(obj, raw, "answer", "No valid answer provided."),
         model=model,
         raw=raw,
     )
@@ -147,16 +125,35 @@ def parse_satisfaction_evaluation(
     model: str,
 ) -> SatisfactionEvaluation:
     """Parse the asker's evaluation of an answer."""
-    obj = _extract_json(raw)
+    obj = extract_json_object(raw)
+
+    satisfaction_raw = text_field(
+        obj,
+        raw,
+        "satisfaction",
+        "PARTIALLY SATISFIED",
+    )
 
     return SatisfactionEvaluation(
         asker_name=answer.asker_name,
         target_name=answer.target_name,
         question=answer.question,
         answer=answer.answer,
-        satisfaction=_clean_satisfaction(obj.get("satisfaction")),
-        reason=str(obj.get("reason") or raw[:500]).strip(),
-        confidence_delta=_clean_confidence_delta(obj.get("confidence_delta")),
+        satisfaction=_clean_satisfaction(satisfaction_raw),
+        reason=text_field(
+            obj,
+            raw,
+            "reason",
+            "No valid satisfaction reason provided.",
+        ),
+        confidence_delta=int_field(
+            obj,
+            raw,
+            "confidence_delta",
+            0,
+            -100,
+            100,
+        ),
         model=model,
         raw=raw,
     )
