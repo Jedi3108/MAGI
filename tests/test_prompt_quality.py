@@ -46,6 +46,12 @@ class TestPromptQuality(unittest.TestCase):
         self.assertIn("Do not increase confidence", REFLECTION_INSTRUCTION)
 
 
+
+    def test_chair_prompt_receives_structured_final_vote_record(self):
+        self.assertIn("Authoritative final reflected vote record", CHAIR_INSTRUCTION)
+        self.assertIn("overrides the transcript", CHAIR_INSTRUCTION)
+        self.assertIn("Base vote attribution on the authoritative final reflected vote record", CHAIR_INSTRUCTION)
+
     def test_chair_prompt_uses_final_reflected_votes(self):
         self.assertIn("final reflected votes are authoritative", CHAIR_INSTRUCTION)
         self.assertIn("Do not treat Round 1 votes", CHAIR_INSTRUCTION)
