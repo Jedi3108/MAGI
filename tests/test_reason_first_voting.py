@@ -3,7 +3,7 @@
 Background: with "vote" as the first key in the JSON schema, the model emitted a
 vote before any reasoning existed in context. The vote was therefore drawn from
 the base model's prior rather than from the facet's argument, and the prose that
-followed was post-hoc rationalisation. Measured effect: 100/100 votes NEGATIVE
+followed was post-hoc rationalisation. Measured effect: 100/100 votes OPPOSE
 across five propositions of differing valence, with reasoning that frequently
 argued the opposite of the vote cast.
 
@@ -80,12 +80,13 @@ class TestParsingIsOrderIndependent(unittest.TestCase):
                 "question_for": "CASPER",
                 "question": "what is fragile?",
                 "can_change_mind_if": "new data",
-                "vote": "AFFIRMATIVE",
+                "stance_summary": "I SUPPORT the action.",
+                "vote": "SUPPORT",
                 "confidence": 77,
             }
         )
         verdict = parse_verdict(MELCHIOR, raw, "test-model")
-        self.assertEqual(verdict.vote, "AFFIRMATIVE")
+        self.assertEqual(verdict.vote, "SUPPORT")
         self.assertEqual(verdict.confidence, 77)
         self.assertEqual(verdict.core_reason, "evidence is insufficient")
 

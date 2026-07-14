@@ -6,6 +6,21 @@ import hashlib
 import json
 import random
 
+def _stance_summary_for_vote(vote: str) -> str:
+    vote = str(vote).strip().upper()
+
+    if vote == "SUPPORT":
+        return "I SUPPORT the target action."
+    if vote == "OPPOSE":
+        return "I OPPOSE the target action."
+    if vote == "ABSTAIN":
+        return "I ABSTAIN because evidence is insufficient."
+    if vote == "INVALID_QUESTION":
+        return "I REJECT THE QUESTION because the proposition framing is invalid."
+
+    return "I ABSTAIN because the vote is unclear."
+
+
 from magi.council.members import VALID_MEMBER_NAMES
 
 
@@ -14,7 +29,7 @@ def mock_verdict(member_name: str, prompt: str) -> str:
     seed = int(hashlib.sha256((member_name + prompt).encode("utf-8")).hexdigest(), 16)
     rng = random.Random(seed)
 
-    vote = rng.choice(["AFFIRMATIVE", "NEGATIVE"])
+    vote = rng.choice(["SUPPORT", "OPPOSE"])
     confidence = rng.randint(45, 95)
 
     possible_targets = [name for name in VALID_MEMBER_NAMES if name != member_name]
@@ -28,6 +43,7 @@ def mock_verdict(member_name: str, prompt: str) -> str:
 
     return json.dumps(
         {
+            "stance_summary": _stance_summary_for_vote(vote),
             "vote": vote,
             "confidence": confidence,
             "core_reason": f"[MOCK] {member_name} leans {vote.lower()} based on its facet.",
@@ -107,7 +123,12 @@ def mock_reflection(
 
     vote_after = current_vote
     if rng.random() < 0.2:
-        vote_after = "NEGATIVE" if current_vote == "AFFIRMATIVE" else "AFFIRMATIVE"
+        if current_vote == "SUPPORT":
+            vote_after = "OPPOSE"
+        elif current_vote == "OPPOSE":
+            vote_after = "SUPPORT"
+        else:
+            vote_after = current_vote
 
     return json.dumps(
         {

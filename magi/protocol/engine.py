@@ -8,7 +8,7 @@ from typing import Callable
 from magi.chair.dossier import DecisionDossier, parse_decision_dossier
 from magi.chair.record import build_structured_chair_record
 from magi.council.members import CHAIR_SAMPLING, COUNCIL, CouncilMember
-from magi.council.verdict import Verdict, parse_verdict
+from magi.council.verdict import ABSTAIN, INVALID_QUESTION, NO_CONSENSUS, OPPOSE, SUPPORT, Verdict, parse_verdict
 from magi.models.mock import (
     mock_answer,
     mock_chair_dossier,
@@ -65,8 +65,19 @@ Confidence calibration:
 - 80 means strong position with some uncertainty.
 - 90+ should be rare and requires unusually strong justification.
 
+Ballot semantics:
+- SUPPORT means you support the concrete target action as stated.
+- OPPOSE means you oppose the concrete target action as stated.
+- ABSTAIN means the available information is insufficient to support or oppose.
+- INVALID_QUESTION means the proposition is malformed, ambiguous, a false dilemma, or not a concrete action.
+- The stance_summary must not contradict the vote.
+- If vote is SUPPORT, stance_summary must start with: I SUPPORT
+- If vote is OPPOSE, stance_summary must start with: I OPPOSE
+- If vote is ABSTAIN, stance_summary must start with: I ABSTAIN
+- If vote is INVALID_QUESTION, stance_summary must start with: I REJECT THE QUESTION
+
 Reason before you vote.
-Emit the keys in exactly the order given below. Your vote comes LAST, and it must follow from
+First identify the target_action. Then write the reason. Your vote comes LAST, and it must follow from
 the core_reason you have just written. Do not decide first and justify afterwards.
 
 Return ONLY one valid JSON object.
@@ -75,12 +86,14 @@ All string values must be plain text.
 
 Required schema (emit the keys in this exact order):
 {{
+  "target_action": "the concrete action being judged, or the ambiguity if the question is malformed",
   "core_reason": "one concrete reason, written in your council voice",
   "main_risk": "one concrete failure mode or danger",
   "question_for": "MELCHIOR" | "BALTHASAR" | "CASPER" | "ARTABAN" | "NO QUESTIONS",
   "question": "one sharp question to another member, or NO QUESTIONS",
   "can_change_mind_if": "specific evidence, condition, or argument that could change your vote",
-  "vote": "AFFIRMATIVE" | "NEGATIVE",
+  "stance_summary": "must start with exactly one matching phrase: I SUPPORT / I OPPOSE / I ABSTAIN / I REJECT THE QUESTION, then explain what your vote means",
+  "vote": "SUPPORT" | "OPPOSE" | "ABSTAIN" | "INVALID_QUESTION",
   "confidence": 0-100
 }}
 
@@ -209,7 +222,7 @@ Required schema (emit the keys in this exact order):
 {{
   "learned": "one or two sentences about what changed in your understanding",
   "reason": "one or two sentences explaining why your vote/confidence changed or stayed the same",
-  "vote_after_reflection": "AFFIRMATIVE" | "NEGATIVE",
+  "vote_after_reflection": "SUPPORT" | "OPPOSE" | "ABSTAIN" | "INVALID_QUESTION",
   "confidence_after_reflection": 0-100
 }}
 """
@@ -242,13 +255,19 @@ The authoritative final reflected vote record overrides the transcript if they a
 The final reflected votes are authoritative.
 Use each member's final reflected vote and final reflected confidence when summarizing positions.
 Do not treat Round 1 votes or Round 1 confidence values as final positions.
-Do not attribute AFFIRMATIVE reasoning to a member whose final reflected vote is NEGATIVE, or NEGATIVE reasoning to a member whose final reflected vote is AFFIRMATIVE.
+Do not attribute SUPPORT reasoning to a member whose final reflected vote is OPPOSE, or OPPOSE reasoning to a member whose final reflected vote is SUPPORT. Treat ABSTAIN and INVALID_QUESTION as distinct positions, not as hidden opposition.
 
 Dossier rules:
 - Base vote attribution on the authoritative final reflected vote record, not on inference from prose.
-- If the decision is AFFIRMATIVE or NEGATIVE, summarize the majority reasoning faithfully.
-- If the decision is NO CONSENSUS, state that no majority exists and summarize the competing positions instead.
-- Preserve minority reasoning if any member dissented.
+- Use the FINAL POSITION GROUPS section exactly when deciding who belongs to SUPPORT, OPPOSE, ABSTAIN, or INVALID_QUESTION.
+- If the decision is SUPPORT, majority_reasoning must summarize only SUPPORT members.
+- If the decision is OPPOSE, majority_reasoning must summarize only OPPOSE members.
+- If the decision is INVALID_QUESTION, majority_reasoning must explain why the question framing was rejected.
+- If the decision is NO CONSENSUS, state that no majority exists and summarize the unresolved competing final positions.
+- minority_reasoning must summarize members not in the winning decision group.
+- Never place a SUPPORT member in OPPOSE reasoning, or an OPPOSE member in SUPPORT reasoning.
+- Treat ABSTAIN as uncertainty/insufficient information, not as hidden opposition.
+- Treat INVALID_QUESTION as rejection of the proposition framing, not as opposition to the underlying value.
 - If there is no minority after reflection, say so clearly.
 - Identify unresolved questions without pretending they are solved.
 - Never leave dossier fields empty. If none exist, write a clear sentence such as: None identified in the council record.
@@ -261,7 +280,7 @@ All string values must be plain text.
 
 Required schema:
 {{
-  "decision": "AFFIRMATIVE" | "NEGATIVE" | "NO CONSENSUS",
+  "decision": "SUPPORT" | "OPPOSE" | "INVALID_QUESTION" | "NO CONSENSUS",
   "vote_split": "text summary of the final vote split",
   "majority_reasoning": "summary based on final reflected votes only; if NO CONSENSUS: state that no majority exists and summarize the competing final positions",
   "minority_reasoning": "summary based on final reflected votes only; if NO CONSENSUS: summarize the unresolved opposing final positions",
@@ -701,7 +720,12 @@ class MagiEngine:
         decision: dict,
     ) -> DecisionDossier:
         """Generate a non-voting Chair decision dossier."""
-        vote_split = f"{decision['affirmative']} affirmative / {decision['negative']} negative"
+        vote_split = (
+            f"{decision['support']} support / "
+            f"{decision['oppose']} oppose / "
+            f"{decision['abstain']} abstain / "
+            f"{decision['invalid_question']} invalid-question"
+        )
         model = self.chair_model
 
         final_vote_record = build_structured_chair_record(reflections)
@@ -794,39 +818,48 @@ class MagiEngine:
         }
 
 
-def decide(verdicts: list[Verdict]) -> dict:
-    """Decide by simple majority; ties are reported as no consensus."""
-    affirmative = [verdict for verdict in verdicts if verdict.approves]
-    negative = [verdict for verdict in verdicts if not verdict.approves]
+def _vote_value(item: object) -> str:
+    if hasattr(item, "vote_after"):
+        return item.vote_after
+    return item.vote
 
-    if len(affirmative) > len(negative):
-        decision = "AFFIRMATIVE"
-    elif len(negative) > len(affirmative):
-        decision = "NEGATIVE"
+
+def _decide_from_votes(votes: list[str]) -> dict:
+    """Decide using explicit ballot semantics.
+
+    ABSTAIN is not treated as hidden opposition.
+    INVALID_QUESTION can itself become the decision if it has a majority.
+    SUPPORT and OPPOSE are compared only as directional votes.
+    """
+    support = sum(1 for vote in votes if vote == SUPPORT)
+    oppose = sum(1 for vote in votes if vote == OPPOSE)
+    abstain = sum(1 for vote in votes if vote == ABSTAIN)
+    invalid_question = sum(1 for vote in votes if vote == INVALID_QUESTION)
+    total = len(votes)
+
+    if invalid_question > total / 2:
+        decision = INVALID_QUESTION
+    elif support > oppose:
+        decision = SUPPORT
+    elif oppose > support:
+        decision = OPPOSE
     else:
-        decision = "NO CONSENSUS"
+        decision = NO_CONSENSUS
 
     return {
         "decision": decision,
-        "affirmative": len(affirmative),
-        "negative": len(negative),
+        "support": support,
+        "oppose": oppose,
+        "abstain": abstain,
+        "invalid_question": invalid_question,
     }
+
+
+def decide(verdicts: list[Verdict]) -> dict:
+    """Decide Round 1 using explicit ballot semantics."""
+    return _decide_from_votes([_vote_value(verdict) for verdict in verdicts])
 
 
 def decide_reflections(reflections: list[Reflection]) -> dict:
-    """Decide by simple majority after reflection."""
-    affirmative = [reflection for reflection in reflections if reflection.approves]
-    negative = [reflection for reflection in reflections if not reflection.approves]
-
-    if len(affirmative) > len(negative):
-        decision = "AFFIRMATIVE"
-    elif len(negative) > len(affirmative):
-        decision = "NEGATIVE"
-    else:
-        decision = "NO CONSENSUS"
-
-    return {
-        "decision": decision,
-        "affirmative": len(affirmative),
-        "negative": len(negative),
-    }
+    """Decide after reflection using explicit ballot semantics."""
+    return _decide_from_votes([_vote_value(reflection) for reflection in reflections])
