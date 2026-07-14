@@ -164,15 +164,27 @@ Confidence: {confidence_before}
 Reason: {core_reason}
 Risk: {main_risk}
 
+In Round 1 you committed, in your own words, to the ONE condition under which you would change your vote:
+"{change_condition}"
+
 Council deliberation context:
 {deliberation_context}
 
 Reflect on the exchange.
 
+Refutation gate — apply this BEFORE deciding your vote:
+- Identify the single strongest argument raised against your core reason.
+- Ask honestly: did it DEFEAT your core reason, or did it merely offer a reasonable-sounding alternative?
+- A compromise, a hybrid proposal, or a middle-ground solution is NOT a defeater.
+- Another member's confidence, or the discussion converging toward agreement, is NOT a defeater. Social agreement is not evidence.
+- You may change your vote ONLY if the specific condition you named above was actually met by the debate.
+- If that condition was not met, you MUST preserve your vote. You may lower your confidence to reflect new sympathy or doubt, but you may not flip.
+
 Rules:
 - State what you genuinely learned, if anything.
 - Preserve your vote if the exchange did not defeat your core reason.
-- Change your vote only if the debate exposed a stronger reason.
+- Change your vote only if the debate exposed a stronger reason that meets your own stated condition.
+- Do not abandon your facet because the rest of the council disagreed with you. A lone position that was not refuted must be held.
 - Adjust confidence realistically.
 - Your learned statement, final vote, confidence, and reason must not contradict each other.
 - If your reasoning now supports the opposite vote, change the vote or explain why you still reject it.
@@ -617,6 +629,7 @@ class MagiEngine:
             confidence_before=verdict.confidence,
             core_reason=verdict.core_reason,
             main_risk=verdict.main_risk,
+            change_condition=verdict.can_change_mind_if,
             deliberation_context=self._deliberation_context(answers, evaluations),
         )
 
