@@ -65,19 +65,23 @@ Confidence calibration:
 - 80 means strong position with some uncertainty.
 - 90+ should be rare and requires unusually strong justification.
 
+Reason before you vote.
+Emit the keys in exactly the order given below. Your vote comes LAST, and it must follow from
+the core_reason you have just written. Do not decide first and justify afterwards.
+
 Return ONLY one valid JSON object.
 No prose, no markdown, no comments, no trailing text.
 All string values must be plain text.
 
-Required schema:
+Required schema (emit the keys in this exact order):
 {{
-  "vote": "AFFIRMATIVE" | "NEGATIVE",
-  "confidence": 0-100,
   "core_reason": "one concrete reason, written in your council voice",
   "main_risk": "one concrete failure mode or danger",
   "question_for": "MELCHIOR" | "BALTHASAR" | "CASPER" | "ARTABAN" | "NO QUESTIONS",
   "question": "one sharp question to another member, or NO QUESTIONS",
-  "can_change_mind_if": "specific evidence, condition, or argument that could change your vote"
+  "can_change_mind_if": "specific evidence, condition, or argument that could change your vote",
+  "vote": "AFFIRMATIVE" | "NEGATIVE",
+  "confidence": 0-100
 }}
 
 Proposition:
@@ -143,10 +147,12 @@ Return ONLY one valid JSON object.
 No prose, no markdown, no comments, no trailing text.
 All string values must be plain text.
 
-Required schema:
+Write your reason first. Your satisfaction rating must follow from the reason you just wrote.
+
+Required schema (emit the keys in this exact order):
 {{
-  "satisfaction": "SATISFIED" | "PARTIALLY SATISFIED" | "NOT SATISFIED",
   "reason": "one or two sentences explaining your evaluation",
+  "satisfaction": "SATISFIED" | "PARTIALLY SATISFIED" | "NOT SATISFIED",
   "confidence_delta": -100 to 100
 }}
 """
@@ -196,12 +202,15 @@ Return ONLY one valid JSON object.
 No prose, no markdown, no comments, no trailing text.
 All string values must be plain text.
 
-Required schema:
+Write "learned" and "reason" first. Your vote comes LAST and must follow from the reason you
+just wrote. Do not decide first and justify afterwards.
+
+Required schema (emit the keys in this exact order):
 {{
   "learned": "one or two sentences about what changed in your understanding",
+  "reason": "one or two sentences explaining why your vote/confidence changed or stayed the same",
   "vote_after_reflection": "AFFIRMATIVE" | "NEGATIVE",
-  "confidence_after_reflection": 0-100,
-  "reason": "one or two sentences explaining why your vote/confidence changed or stayed the same"
+  "confidence_after_reflection": 0-100
 }}
 """
 
