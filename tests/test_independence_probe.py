@@ -1,0 +1,115 @@
+"""Tests for the independence probe metrics.
+
+The metric tests use synthetic samples with known votes so correctness does not
+depend on mock randomness.
+"""
+
+import unittest
+
+from magi.tools.independence import (
+    PHASE_ROUND1,
+    Sample,
+    affirmative_rate,
+    convergence,
+    mean_confidence,
+    member_stability,
+    pairwise_agreement,
+    run_probe,
+)
+from magi.protocol.engine import MagiEngine
+
+MEMBERS = ["MELCHIOR", "BALTHASAR", "CASPER", "ARTABAN"]
+
+
+def _s(prop, rep, votes, conf=None):
+    conf = conf or {m: 70 for m in votes}
+    return Sample(proposition=prop, repetition=rep, round1_votes=votes, round1_conf=conf)
+
+
+class TestMetrics(unittest.TestCase):
+    def test_agreement_identical_voters_is_one(self):
+        samples = [
+            _s("p", 0, {"MELCHIOR": "AFFIRMATIVE", "BALTHASAR": "AFFIRMATIVE"}),
+            _s("p", 1, {"MELCHIOR": "NEGATIVE", "BALTHASAR": "NEGATIVE"}),
+        ]
+        agree = pairwise_agreement(samples, ["MELCHIOR", "BALTHASAR"])
+        self.assertEqual(agree[("BALTHASAR", "MELCHIOR")], 1.0)
+
+    def test_agreement_opposite_voters_is_zero(self):
+        samples = [
+            _s("p", 0, {"MELCHIOR": "AFFIRMATIVE", "CASPER": "NEGATIVE"}),
+            _s("p", 1, {"MELCHIOR": "NEGATIVE", "CASPER": "AFFIRMATIVE"}),
+        ]
+        agree = pairwise_agreement(samples, ["MELCHIOR", "CASPER"])
+        self.assertEqual(agree[("CASPER", "MELCHIOR")], 0.0)
+
+    def test_stability_perfect_when_consistent(self):
+        samples = [_s("p", r, {"CASPER": "AFFIRMATIVE"}) for r in range(5)]
+        stab = member_stability(samples, ["CASPER"])
+        self.assertEqual(stab["CASPER"], 1.0)
+
+    def test_stability_half_on_coin_flip(self):
+        votes = ["AFFIRMATIVE", "NEGATIVE", "AFFIRMATIVE", "NEGATIVE"]
+        samples = [_s("p", r, {"CASPER": v}) for r, v in enumerate(votes)]
+        stab = member_stability(samples, ["CASPER"])
+        self.assertEqual(stab["CASPER"], 0.5)
+
+    def test_stability_averages_across_propositions(self):
+        samples = [
+            _s("p1", 0, {"CASPER": "AFFIRMATIVE"}),
+            _s("p1", 1, {"CASPER": "AFFIRMATIVE"}),  # p1 stability 1.0
+            _s("p2", 0, {"CASPER": "AFFIRMATIVE"}),
+            _s("p2", 1, {"CASPER": "NEGATIVE"}),      # p2 stability 0.5
+        ]
+        stab = member_stability(samples, ["CASPER"])
+        self.assertAlmostEqual(stab["CASPER"], 0.75)
+
+    def test_affirmative_rate(self):
+        samples = [
+            _s("p", 0, {"ARTABAN": "AFFIRMATIVE"}),
+            _s("p", 1, {"ARTABAN": "NEGATIVE"}),
+            _s("p", 2, {"ARTABAN": "NEGATIVE"}),
+            _s("p", 3, {"ARTABAN": "NEGATIVE"}),
+        ]
+        self.assertEqual(affirmative_rate(samples, ["ARTABAN"])["ARTABAN"], 0.25)
+
+    def test_mean_confidence(self):
+        samples = [
+            _s("p", 0, {"MELCHIOR": "AFFIRMATIVE"}, conf={"MELCHIOR": 60}),
+            _s("p", 1, {"MELCHIOR": "AFFIRMATIVE"}, conf={"MELCHIOR": 80}),
+        ]
+        self.assertEqual(mean_confidence(samples, ["MELCHIOR"])["MELCHIOR"], 70.0)
+
+    def test_convergence_none_without_reflected_votes(self):
+        samples = [_s("p", 0, {"MELCHIOR": "AFFIRMATIVE"})]
+        self.assertIsNone(convergence(samples, ["MELCHIOR"]))
+
+    def test_convergence_positive_when_reflection_aligns(self):
+        s = Sample(
+            proposition="p", repetition=0,
+            round1_votes={"MELCHIOR": "AFFIRMATIVE", "CASPER": "NEGATIVE"},
+            round1_conf={"MELCHIOR": 70, "CASPER": 70},
+            reflected_votes={"MELCHIOR": "AFFIRMATIVE", "CASPER": "AFFIRMATIVE"},
+            reflected_conf={"MELCHIOR": 70, "CASPER": 70},
+        )
+        # before: disagree (0.0); after: agree (1.0) -> convergence +1.0
+        self.assertEqual(convergence([s], ["MELCHIOR", "CASPER"]), 1.0)
+
+
+class TestProbeRunsUnderMock(unittest.TestCase):
+    def test_probe_produces_samples_for_every_prop_and_rep(self):
+        engine = MagiEngine(mock=True)
+        report = run_probe(engine, ["p1", "p2"], repetitions=3)
+        self.assertEqual(len(report.samples), 6)
+        for sample in report.samples:
+            self.assertEqual(set(sample.round1_votes), set(MEMBERS))
+
+    def test_full_mode_captures_reflected_votes(self):
+        engine = MagiEngine(mock=True)
+        report = run_probe(engine, ["p1"], repetitions=1, full=True)
+        self.assertTrue(report.full)
+        self.assertEqual(set(report.samples[0].reflected_votes), set(MEMBERS))
+
+
+if __name__ == "__main__":
+    unittest.main()
