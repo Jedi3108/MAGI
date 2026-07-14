@@ -55,7 +55,7 @@ class TestPromptQuality(unittest.TestCase):
     def test_chair_prompt_uses_final_reflected_votes(self):
         self.assertIn("final reflected votes are authoritative", CHAIR_INSTRUCTION)
         self.assertIn("Do not treat Round 1 votes", CHAIR_INSTRUCTION)
-        self.assertIn("Do not attribute AFFIRMATIVE reasoning", CHAIR_INSTRUCTION)
+        self.assertIn("Do not attribute SUPPORT reasoning", CHAIR_INSTRUCTION)
 
     def test_chair_prompt_handles_no_consensus(self):
         self.assertIn("If the decision is NO CONSENSUS", CHAIR_INSTRUCTION)

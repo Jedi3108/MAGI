@@ -9,7 +9,7 @@ import unittest
 from magi.tools.independence import (
     PHASE_ROUND1,
     Sample,
-    affirmative_rate,
+    support_rate,
     convergence,
     mean_confidence,
     member_stability,
@@ -29,67 +29,67 @@ def _s(prop, rep, votes, conf=None):
 class TestMetrics(unittest.TestCase):
     def test_agreement_identical_voters_is_one(self):
         samples = [
-            _s("p", 0, {"MELCHIOR": "AFFIRMATIVE", "BALTHASAR": "AFFIRMATIVE"}),
-            _s("p", 1, {"MELCHIOR": "NEGATIVE", "BALTHASAR": "NEGATIVE"}),
+            _s("p", 0, {"MELCHIOR": "SUPPORT", "BALTHASAR": "SUPPORT"}),
+            _s("p", 1, {"MELCHIOR": "OPPOSE", "BALTHASAR": "OPPOSE"}),
         ]
         agree = pairwise_agreement(samples, ["MELCHIOR", "BALTHASAR"])
         self.assertEqual(agree[("BALTHASAR", "MELCHIOR")], 1.0)
 
     def test_agreement_opposite_voters_is_zero(self):
         samples = [
-            _s("p", 0, {"MELCHIOR": "AFFIRMATIVE", "CASPER": "NEGATIVE"}),
-            _s("p", 1, {"MELCHIOR": "NEGATIVE", "CASPER": "AFFIRMATIVE"}),
+            _s("p", 0, {"MELCHIOR": "SUPPORT", "CASPER": "OPPOSE"}),
+            _s("p", 1, {"MELCHIOR": "OPPOSE", "CASPER": "SUPPORT"}),
         ]
         agree = pairwise_agreement(samples, ["MELCHIOR", "CASPER"])
         self.assertEqual(agree[("CASPER", "MELCHIOR")], 0.0)
 
     def test_stability_perfect_when_consistent(self):
-        samples = [_s("p", r, {"CASPER": "AFFIRMATIVE"}) for r in range(5)]
+        samples = [_s("p", r, {"CASPER": "SUPPORT"}) for r in range(5)]
         stab = member_stability(samples, ["CASPER"])
         self.assertEqual(stab["CASPER"], 1.0)
 
     def test_stability_half_on_coin_flip(self):
-        votes = ["AFFIRMATIVE", "NEGATIVE", "AFFIRMATIVE", "NEGATIVE"]
+        votes = ["SUPPORT", "OPPOSE", "SUPPORT", "OPPOSE"]
         samples = [_s("p", r, {"CASPER": v}) for r, v in enumerate(votes)]
         stab = member_stability(samples, ["CASPER"])
         self.assertEqual(stab["CASPER"], 0.5)
 
     def test_stability_averages_across_propositions(self):
         samples = [
-            _s("p1", 0, {"CASPER": "AFFIRMATIVE"}),
-            _s("p1", 1, {"CASPER": "AFFIRMATIVE"}),  # p1 stability 1.0
-            _s("p2", 0, {"CASPER": "AFFIRMATIVE"}),
-            _s("p2", 1, {"CASPER": "NEGATIVE"}),      # p2 stability 0.5
+            _s("p1", 0, {"CASPER": "SUPPORT"}),
+            _s("p1", 1, {"CASPER": "SUPPORT"}),  # p1 stability 1.0
+            _s("p2", 0, {"CASPER": "SUPPORT"}),
+            _s("p2", 1, {"CASPER": "OPPOSE"}),      # p2 stability 0.5
         ]
         stab = member_stability(samples, ["CASPER"])
         self.assertAlmostEqual(stab["CASPER"], 0.75)
 
-    def test_affirmative_rate(self):
+    def test_support_rate(self):
         samples = [
-            _s("p", 0, {"ARTABAN": "AFFIRMATIVE"}),
-            _s("p", 1, {"ARTABAN": "NEGATIVE"}),
-            _s("p", 2, {"ARTABAN": "NEGATIVE"}),
-            _s("p", 3, {"ARTABAN": "NEGATIVE"}),
+            _s("p", 0, {"ARTABAN": "SUPPORT"}),
+            _s("p", 1, {"ARTABAN": "OPPOSE"}),
+            _s("p", 2, {"ARTABAN": "OPPOSE"}),
+            _s("p", 3, {"ARTABAN": "OPPOSE"}),
         ]
-        self.assertEqual(affirmative_rate(samples, ["ARTABAN"])["ARTABAN"], 0.25)
+        self.assertEqual(support_rate(samples, ["ARTABAN"])["ARTABAN"], 0.25)
 
     def test_mean_confidence(self):
         samples = [
-            _s("p", 0, {"MELCHIOR": "AFFIRMATIVE"}, conf={"MELCHIOR": 60}),
-            _s("p", 1, {"MELCHIOR": "AFFIRMATIVE"}, conf={"MELCHIOR": 80}),
+            _s("p", 0, {"MELCHIOR": "SUPPORT"}, conf={"MELCHIOR": 60}),
+            _s("p", 1, {"MELCHIOR": "SUPPORT"}, conf={"MELCHIOR": 80}),
         ]
         self.assertEqual(mean_confidence(samples, ["MELCHIOR"])["MELCHIOR"], 70.0)
 
     def test_convergence_none_without_reflected_votes(self):
-        samples = [_s("p", 0, {"MELCHIOR": "AFFIRMATIVE"})]
+        samples = [_s("p", 0, {"MELCHIOR": "SUPPORT"})]
         self.assertIsNone(convergence(samples, ["MELCHIOR"]))
 
     def test_convergence_positive_when_reflection_aligns(self):
         s = Sample(
             proposition="p", repetition=0,
-            round1_votes={"MELCHIOR": "AFFIRMATIVE", "CASPER": "NEGATIVE"},
+            round1_votes={"MELCHIOR": "SUPPORT", "CASPER": "OPPOSE"},
             round1_conf={"MELCHIOR": 70, "CASPER": 70},
-            reflected_votes={"MELCHIOR": "AFFIRMATIVE", "CASPER": "AFFIRMATIVE"},
+            reflected_votes={"MELCHIOR": "SUPPORT", "CASPER": "SUPPORT"},
             reflected_conf={"MELCHIOR": 70, "CASPER": 70},
         )
         # before: disagree (0.0); after: agree (1.0) -> convergence +1.0

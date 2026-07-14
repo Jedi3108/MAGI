@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from magi.council.members import CouncilMember
-from magi.council.verdict import Verdict
+from magi.council.verdict import ABSTAIN, DECISIVE_VOTES, INVALID_QUESTION, OPPOSE, SUPPORT, VALID_VOTES, Verdict
 from magi.utils.json_tools import extract_json_object, int_field, text_field
 
 
@@ -25,14 +25,35 @@ class Reflection:
     raw: str = ""
 
     @property
+    def supports(self) -> bool:
+        return self.vote_after == SUPPORT
+
+    @property
+    def opposes(self) -> bool:
+        return self.vote_after == OPPOSE
+
+    @property
+    def abstains(self) -> bool:
+        return self.vote_after == ABSTAIN
+
+    @property
+    def invalid_question(self) -> bool:
+        return self.vote_after == INVALID_QUESTION
+
+    @property
+    def decisive(self) -> bool:
+        return self.vote_after in DECISIVE_VOTES
+
+    @property
     def approves(self) -> bool:
-        return self.vote_after == "AFFIRMATIVE"
+        """Backward-compatible alias for old SUPPORT/OPPOSE code paths."""
+        return self.supports
 
 
 def _clean_vote(value: object) -> str:
     vote = str(value or "").strip().upper()
 
-    if vote in {"AFFIRMATIVE", "NEGATIVE"}:
+    if vote in VALID_VOTES:
         return vote
 
     raise ValueError(f"Invalid reflection vote token: {value!r}")

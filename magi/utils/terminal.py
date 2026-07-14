@@ -50,7 +50,7 @@ def render_verdicts(verdicts: list[Verdict]) -> None:
 
     for verdict in verdicts:
         color = COLORS.get(verdict.member_name, C.GREY)
-        vote_color = C.GREEN if verdict.approves else C.RED
+        vote_color = C.GREEN if verdict.vote == "SUPPORT" else C.RED if verdict.vote == "OPPOSE" else C.AMBER
         bar = confidence_bar(verdict.confidence)
 
         print(
@@ -60,6 +60,11 @@ def render_verdicts(verdicts: list[Verdict]) -> None:
             f"{bar} {verdict.confidence:>3}% "
             f"{C.GREY}{verdict.model}{C.RESET}"
         )
+        print(f"  Target: {verdict.target_action}")
+        print(f"  Stance: {verdict.stance_summary}")
+        print(f"  Align:  {verdict.vote_reason_alignment}")
+        print(f"  Cause:  {verdict.action_causality}")
+        print(f"  Compare:{verdict.counterfactual_comparison}")
         print(f"  Reason: {verdict.core_reason}")
         print(f"  Risk:   {verdict.main_risk}")
         print(f"  Asks:   {verdict.question_for} — {verdict.question}")
@@ -127,7 +132,7 @@ def render_reflections(reflections: list[Reflection]) -> None:
 
     for reflection in reflections:
         color = COLORS.get(reflection.member_name, C.GREY)
-        vote_color = C.GREEN if reflection.approves else C.RED
+        vote_color = C.GREEN if reflection.vote_after == "SUPPORT" else C.RED if reflection.vote_after == "OPPOSE" else C.AMBER
 
         print(
             f"\n{color}{C.BOLD}{reflection.member_name:<10}{C.RESET} "
@@ -146,9 +151,9 @@ def render_reflections(reflections: list[Reflection]) -> None:
 def render_decision(decision: dict) -> None:
     result = decision["decision"]
 
-    if result == "AFFIRMATIVE":
+    if result == "SUPPORT":
         color = C.GREEN
-    elif result == "NEGATIVE":
+    elif result == "OPPOSE":
         color = C.RED
     else:
         color = C.AMBER
@@ -156,8 +161,10 @@ def render_decision(decision: dict) -> None:
     print(f"\n{color}{'═' * 72}{C.RESET}")
     print(f"{color}{C.BOLD}MAGI DECISION AFTER REFLECTION :: {result}{C.RESET}")
     print(
-        f"{color}Split: {decision['affirmative']} affirmative / "
-        f"{decision['negative']} negative{C.RESET}"
+        f"{color}Split: {decision['support']} support / "
+        f"{decision['oppose']} oppose / "
+        f"{decision['abstain']} abstain / "
+        f"{decision['invalid_question']} invalid-question{C.RESET}"
     )
     print(f"{color}{'═' * 72}{C.RESET}\n")
 

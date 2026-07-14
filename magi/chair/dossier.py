@@ -26,7 +26,7 @@ class DecisionDossier:
 def _clean_decision(value: object, fallback: str) -> str:
     decision = str(value or fallback).strip().upper()
 
-    if decision in {"AFFIRMATIVE", "NEGATIVE", "NO CONSENSUS"}:
+    if decision in {"SUPPORT", "OPPOSE", "INVALID_QUESTION", "NO CONSENSUS"}:
         return decision
 
     return fallback
