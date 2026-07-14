@@ -31,7 +31,7 @@ from typing import Callable, Iterable
 from magi.council.members import COUNCIL
 from magi.protocol.engine import MagiEngine
 
-AFFIRMATIVE = "AFFIRMATIVE"
+SUPPORT = "SUPPORT"
 
 PHASE_ROUND1 = "round1"
 PHASE_REFLECTED = "reflected"
@@ -191,7 +191,7 @@ def member_stability(
         for (prop, mem), casts in by_prop.items():
             if mem != member or not casts:
                 continue
-            aff = sum(1 for c in casts if c == AFFIRMATIVE)
+            aff = sum(1 for c in casts if c == SUPPORT)
             neg = len(casts) - aff
             per_prop_scores.append(max(aff, neg) / len(casts))
         result[member] = statistics.mean(per_prop_scores) if per_prop_scores else 0.0
@@ -199,12 +199,12 @@ def member_stability(
     return result
 
 
-def affirmative_rate(
+def support_rate(
     samples: list[Sample],
     members: list[str],
     phase: str = PHASE_ROUND1,
 ) -> dict[str, float]:
-    """Fraction of all a member's votes that were AFFIRMATIVE.
+    """Fraction of all a member's votes that were SUPPORT.
 
     A member stuck at 0.0 or 1.0 across a value-diverse proposition set never
     changes its mind — a sign of a mis-bound facet or the silent-default vote.
@@ -216,7 +216,7 @@ def affirmative_rate(
             for sample in samples
             if member in sample.votes(phase)
         ]
-        aff = sum(1 for c in casts if c == AFFIRMATIVE)
+        aff = sum(1 for c in casts if c == SUPPORT)
         result[member] = aff / len(casts) if casts else 0.0
     return result
 
@@ -252,3 +252,7 @@ def convergence(
     before = pairwise_agreement(samples, members, PHASE_ROUND1)
     after = pairwise_agreement(samples, members, PHASE_REFLECTED)
     return statistics.mean(after.values()) - statistics.mean(before.values())
+
+
+# Backward-compatible alias for older callers/tests.
+affirmative_rate = support_rate

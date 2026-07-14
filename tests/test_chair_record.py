@@ -12,8 +12,8 @@ class TestStructuredChairRecord(unittest.TestCase):
             Reflection(
                 member_name="MELCHIOR",
                 member_title="The Scientist",
-                vote_before="AFFIRMATIVE",
-                vote_after="NEGATIVE",
+                vote_before="SUPPORT",
+                vote_after="OPPOSE",
                 confidence_before=80,
                 confidence_after=60,
                 learned="The evidence was weaker than expected.",
@@ -23,8 +23,8 @@ class TestStructuredChairRecord(unittest.TestCase):
             Reflection(
                 member_name="CASPER",
                 member_title="The Woman",
-                vote_before="NEGATIVE",
-                vote_after="AFFIRMATIVE",
+                vote_before="OPPOSE",
+                vote_after="SUPPORT",
                 confidence_before=70,
                 confidence_after=75,
                 learned="A suppressed perspective matters.",
@@ -36,21 +36,21 @@ class TestStructuredChairRecord(unittest.TestCase):
         record = build_structured_chair_record(reflections)
 
         self.assertIn("AUTHORITATIVE FINAL REFLECTED VOTE RECORD", record)
-        self.assertIn("final_affirmative_count=1", record)
-        self.assertIn("final_negative_count=1", record)
+        self.assertIn("final_support_count=1", record)
+        self.assertIn("final_oppose_count=1", record)
         self.assertIn("MELCHIOR", record)
-        self.assertIn("final_vote=NEGATIVE", record)
-        self.assertIn("round1_vote=AFFIRMATIVE", record)
+        self.assertIn("final_vote=OPPOSE", record)
+        self.assertIn("round1_vote=SUPPORT", record)
         self.assertIn("CASPER", record)
-        self.assertIn("final_vote=AFFIRMATIVE", record)
+        self.assertIn("final_vote=SUPPORT", record)
 
     def test_structured_record_collapses_multiline_text(self):
         reflections = [
             Reflection(
                 member_name="ARTABAN",
                 member_title="The Man",
-                vote_before="NEGATIVE",
-                vote_after="NEGATIVE",
+                vote_before="OPPOSE",
+                vote_after="OPPOSE",
                 confidence_before=80,
                 confidence_after=70,
                 learned="Line one.\nLine two.",

@@ -29,7 +29,7 @@ from magi.tools.independence import (
     PHASE_REFLECTED,
     PHASE_ROUND1,
     ProbeReport,
-    affirmative_rate,
+    support_rate,
     convergence,
     mean_confidence,
     member_stability,
@@ -87,12 +87,12 @@ def render_agreement_matrix(report: ProbeReport, phase: str) -> None:
 def render_member_table(report: ProbeReport, phase: str) -> None:
     members = report.members
     stab = member_stability(report.samples, members, phase)
-    aff = affirmative_rate(report.samples, members, phase)
+    aff = support_rate(report.samples, members, phase)
     conf = mean_confidence(report.samples, members, phase)
 
     print(f"\n{C.BOLD}PER-MEMBER PROFILE{C.RESET}")
     print(f"{C.GREY}stability = vote consistency across repetitions of the same proposition{C.RESET}\n")
-    print(f"  {'MEMBER':<12}{'STABILITY':>11}{'AFFIRM RATE':>13}{'MEAN CONF':>11}")
+    print(f"  {'MEMBER':<12}{'STABILITY':>11}{'SUPPORT RATE':>13}{'MEAN CONF':>11}")
     for m in members:
         stab_color = C.RED if stab[m] < NOISY_STABILITY else C.RESET
         stuck = aff[m] in (0.0, 1.0) and len(report.propositions) > 1
@@ -109,7 +109,7 @@ def render_member_table(report: ProbeReport, phase: str) -> None:
         print(f"\n{C.RED}Noisy voices (single runs unreliable):{C.RESET} {', '.join(noisy)}")
     stuck = [m for m in members if aff[m] in (0.0, 1.0) and len(report.propositions) > 1]
     if stuck:
-        print(f"{C.AMBER}Never changes vote across diverse propositions:{C.RESET} "
+        print(f"{C.AMBER}Support rate pinned across diverse propositions:{C.RESET} "
               f"{', '.join(stuck)} — check facet binding or silent-default votes.")
 
 

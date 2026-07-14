@@ -20,7 +20,7 @@ class TestCouncilCore(unittest.TestCase):
         self.assertEqual(len(result["reflections"]), 4)
         self.assertIn(
             result["decision"]["decision"],
-            {"AFFIRMATIVE", "NEGATIVE", "NO CONSENSUS"},
+            {"SUPPORT", "OPPOSE", "INVALID_QUESTION", "NO CONSENSUS"},
         )
 
     def test_each_verdict_has_structured_fields(self):
@@ -30,7 +30,7 @@ class TestCouncilCore(unittest.TestCase):
 
         for verdict in result["verdicts"]:
             self.assertTrue(verdict.member_name)
-            self.assertIn(verdict.vote, {"AFFIRMATIVE", "NEGATIVE"})
+            self.assertIn(verdict.vote, {"SUPPORT", "OPPOSE", "ABSTAIN", "INVALID_QUESTION"})
             self.assertGreaterEqual(verdict.confidence, 0)
             self.assertLessEqual(verdict.confidence, 100)
             self.assertTrue(verdict.core_reason)
@@ -81,8 +81,8 @@ class TestCouncilCore(unittest.TestCase):
 
         for reflection in result["reflections"]:
             self.assertTrue(reflection.member_name)
-            self.assertIn(reflection.vote_before, {"AFFIRMATIVE", "NEGATIVE"})
-            self.assertIn(reflection.vote_after, {"AFFIRMATIVE", "NEGATIVE"})
+            self.assertIn(reflection.vote_before, {"SUPPORT", "OPPOSE", "ABSTAIN", "INVALID_QUESTION"})
+            self.assertIn(reflection.vote_after, {"SUPPORT", "OPPOSE", "ABSTAIN", "INVALID_QUESTION"})
             self.assertGreaterEqual(reflection.confidence_before, 0)
             self.assertLessEqual(reflection.confidence_before, 100)
             self.assertGreaterEqual(reflection.confidence_after, 0)
@@ -98,7 +98,7 @@ class TestCouncilCore(unittest.TestCase):
 
         self.assertIn(
             dossier.decision,
-            {"AFFIRMATIVE", "NEGATIVE", "NO CONSENSUS"},
+            {"SUPPORT", "OPPOSE", "INVALID_QUESTION", "NO CONSENSUS"},
         )
         self.assertTrue(dossier.vote_split)
         self.assertTrue(dossier.majority_reasoning)

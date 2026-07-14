@@ -19,7 +19,8 @@ class TestJsonRobustness(unittest.TestCase):
         member = COUNCIL[0]
         raw = """
         {
-          "vote": "AFFIRMATIVE",
+          "stance_summary": "I SUPPORT the action.",
+          "vote": "SUPPORT",
           "confidence": 88,
           "core_reason": "The claim is supported.",
           "main_risk": "The evidence may be incomplete.",
@@ -31,7 +32,7 @@ class TestJsonRobustness(unittest.TestCase):
 
         verdict = parse_verdict(member=member, raw=raw, model="test")
 
-        self.assertEqual(verdict.vote, "AFFIRMATIVE")
+        self.assertEqual(verdict.vote, "SUPPORT")
         self.assertEqual(verdict.confidence, 88)
         self.assertEqual(verdict.core_reason, "The claim is supported.")
 
@@ -71,7 +72,8 @@ class TestJsonRobustness(unittest.TestCase):
             member=member,
             raw="""
             {
-              "vote": "AFFIRMATIVE",
+              "stance_summary": "I SUPPORT the action.",
+              "vote": "SUPPORT",
               "confidence": 80,
               "core_reason": "Autonomy matters.",
               "main_risk": "Implementation may be unclear.",
@@ -86,7 +88,7 @@ class TestJsonRobustness(unittest.TestCase):
         raw = """
         {
           "learned": "Implementation details matter.",
-          "vote_after_reflection": "NEGATIVE",
+          "vote_after_reflection": "OPPOSE",
           "confidence_after_reflection": 70,
           "reason": "The debate revealed unresolved risks."
         """
@@ -98,7 +100,7 @@ class TestJsonRobustness(unittest.TestCase):
             model="test",
         )
 
-        self.assertEqual(reflection.vote_after, "NEGATIVE")
+        self.assertEqual(reflection.vote_after, "OPPOSE")
         self.assertEqual(reflection.confidence_after, 70)
         self.assertEqual(reflection.learned, "Implementation details matter.")
         self.assertFalse(reflection.reason.strip().startswith("{"))
@@ -122,12 +124,12 @@ class TestJsonRobustness(unittest.TestCase):
         dossier = parse_decision_dossier(
             raw="{ broken json",
             model="test",
-            fallback_decision="NEGATIVE",
-            fallback_split="1 affirmative / 3 negative",
+            fallback_decision="OPPOSE",
+            fallback_split="1 support / 3 oppose",
         )
 
-        self.assertEqual(dossier.decision, "NEGATIVE")
-        self.assertEqual(dossier.vote_split, "1 affirmative / 3 negative")
+        self.assertEqual(dossier.decision, "OPPOSE")
+        self.assertEqual(dossier.vote_split, "1 support / 3 oppose")
         self.assertEqual(
             dossier.majority_reasoning,
             "No valid majority reasoning provided.",
@@ -144,7 +146,8 @@ class TestQuestionSafety(unittest.TestCase):
 
         raw = """
         {
-          "vote": "NEGATIVE",
+          "stance_summary": "I OPPOSE the action.",
+          "vote": "OPPOSE",
           "confidence": 70,
           "core_reason": "Risk remains high.",
           "main_risk": "Self-questioning would waste a protocol slot.",
