@@ -20,6 +20,9 @@ class TestJsonRobustness(unittest.TestCase):
         raw = """
         {
           "stance_summary": "I SUPPORT the action.",
+          "vote_reason_alignment": "I SUPPORT THE TARGET ACTION BECAUSE the reason supports the action.",
+          "action_causality": "IF THE TARGET ACTION IS TAKEN, THEN IT HELPS BECAUSE the reason supports the action.",
+          "counterfactual_comparison": "TAKING THE TARGET ACTION IS BETTER THAN NOT TAKING IT BECAUSE the reason supports action.",
           "vote": "SUPPORT",
           "confidence": 88,
           "core_reason": "The claim is supported.",
@@ -73,6 +76,9 @@ class TestJsonRobustness(unittest.TestCase):
             raw="""
             {
               "stance_summary": "I SUPPORT the action.",
+              "vote_reason_alignment": "I SUPPORT THE TARGET ACTION BECAUSE the reason supports the action.",
+              "action_causality": "IF THE TARGET ACTION IS TAKEN, THEN IT HELPS BECAUSE the reason supports the action.",
+              "counterfactual_comparison": "TAKING THE TARGET ACTION IS BETTER THAN NOT TAKING IT BECAUSE the reason supports action.",
               "vote": "SUPPORT",
               "confidence": 80,
               "core_reason": "Autonomy matters.",
@@ -147,6 +153,9 @@ class TestQuestionSafety(unittest.TestCase):
         raw = """
         {
           "stance_summary": "I OPPOSE the action.",
+          "vote_reason_alignment": "I OPPOSE THE TARGET ACTION BECAUSE the reason opposes the action.",
+          "action_causality": "IF THE TARGET ACTION IS TAKEN, THEN IT HARMS BECAUSE the reason opposes the action.",
+          "counterfactual_comparison": "TAKING THE TARGET ACTION IS WORSE THAN NOT TAKING IT BECAUSE the reason opposes action.",
           "vote": "OPPOSE",
           "confidence": 70,
           "core_reason": "Risk remains high.",

@@ -18,6 +18,24 @@ def raw(vote, stance):
             "question": "NO QUESTIONS",
             "can_change_mind_if": "evidence",
             "stance_summary": stance,
+            "vote_reason_alignment": {
+                "SUPPORT": "I SUPPORT THE TARGET ACTION BECAUSE the reason supports the action.",
+                "OPPOSE": "I OPPOSE THE TARGET ACTION BECAUSE the reason opposes the action.",
+                "ABSTAIN": "I ABSTAIN BECAUSE evidence is insufficient.",
+                "INVALID_QUESTION": "I REJECT THE QUESTION BECAUSE the framing is invalid.",
+            }.get(vote, "I ABSTAIN BECAUSE the vote token is invalid."),
+            "action_causality": {
+                "SUPPORT": "IF THE TARGET ACTION IS TAKEN, THEN IT HELPS BECAUSE the reason supports the action.",
+                "OPPOSE": "IF THE TARGET ACTION IS TAKEN, THEN IT HARMS BECAUSE the reason opposes the action.",
+                "ABSTAIN": "IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE evidence is insufficient.",
+                "INVALID_QUESTION": "THE TARGET ACTION IS NOT WELL-DEFINED BECAUSE the framing is invalid.",
+            }.get(str(vote).strip().upper(), "IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE the vote token is invalid."),
+            "counterfactual_comparison": {
+                "SUPPORT": "TAKING THE TARGET ACTION IS BETTER THAN NOT TAKING IT BECAUSE the reason supports action.",
+                "OPPOSE": "TAKING THE TARGET ACTION IS WORSE THAN NOT TAKING IT BECAUSE the reason opposes action.",
+                "ABSTAIN": "I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE evidence is insufficient.",
+                "INVALID_QUESTION": "I CANNOT COMPARE OPTIONS BECAUSE THE QUESTION IS INVALID.",
+            }.get(str(vote).strip().upper(), "I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE the vote token is invalid."),
             "vote": vote,
             "confidence": 70,
         }
@@ -40,6 +58,14 @@ class TestStanceConsistency(unittest.TestCase):
     def test_invalid_question_requires_reject_prefix(self):
         parsed = parse_verdict(MELCHIOR, raw("INVALID_QUESTION", "I REJECT THE QUESTION because it is a false binary."), "test-model")
         self.assertEqual(parsed.vote, "INVALID_QUESTION")
+
+    def test_bare_oppose_stance_is_canonicalized(self):
+        parsed = parse_verdict(MELCHIOR, raw("OPPOSE", "OPPOSE"), "test-model")
+        self.assertEqual(parsed.stance_summary, "I OPPOSE the target action.")
+
+    def test_bare_support_stance_is_canonicalized(self):
+        parsed = parse_verdict(MELCHIOR, raw("SUPPORT", "SUPPORT"), "test-model")
+        self.assertEqual(parsed.stance_summary, "I SUPPORT the target action.")
 
     def test_oppose_cannot_claim_support(self):
         with self.assertRaises(ValueError):

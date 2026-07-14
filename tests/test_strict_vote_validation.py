@@ -12,6 +12,17 @@ from magi.council.members import MELCHIOR
 from magi.council.verdict import parse_verdict
 from magi.protocol.reflection import parse_reflection
 
+def alignment_for(vote: str) -> str:
+    vote = str(vote).strip().upper()
+
+    return {
+        "SUPPORT": "I SUPPORT THE TARGET ACTION BECAUSE the reason supports the action.",
+        "OPPOSE": "I OPPOSE THE TARGET ACTION BECAUSE the reason opposes the action.",
+        "ABSTAIN": "I ABSTAIN BECAUSE evidence is insufficient.",
+        "INVALID_QUESTION": "I REJECT THE QUESTION BECAUSE the framing is invalid.",
+    }.get(vote, "I ABSTAIN BECAUSE evidence is insufficient.")
+
+
 def stance_for(vote: str) -> str:
     vote = str(vote).strip().upper()
 
@@ -33,6 +44,19 @@ def valid_verdict_raw(vote="SUPPORT"):
             "question": "NO QUESTIONS",
             "can_change_mind_if": "better evidence",
             "stance_summary": stance_for(vote),
+            "vote_reason_alignment": alignment_for(vote),
+            "action_causality": {
+                "SUPPORT": "IF THE TARGET ACTION IS TAKEN, THEN IT HELPS BECAUSE the reason supports the action.",
+                "OPPOSE": "IF THE TARGET ACTION IS TAKEN, THEN IT HARMS BECAUSE the reason opposes the action.",
+                "ABSTAIN": "IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE evidence is insufficient.",
+                "INVALID_QUESTION": "THE TARGET ACTION IS NOT WELL-DEFINED BECAUSE the framing is invalid.",
+            }.get(str(vote).strip().upper(), "IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE the vote token is invalid."),
+            "counterfactual_comparison": {
+                "SUPPORT": "TAKING THE TARGET ACTION IS BETTER THAN NOT TAKING IT BECAUSE the reason supports action.",
+                "OPPOSE": "TAKING THE TARGET ACTION IS WORSE THAN NOT TAKING IT BECAUSE the reason opposes action.",
+                "ABSTAIN": "I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE evidence is insufficient.",
+                "INVALID_QUESTION": "I CANNOT COMPARE OPTIONS BECAUSE THE QUESTION IS INVALID.",
+            }.get(str(vote).strip().upper(), "I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE the vote token is invalid."),
             "vote": vote,
             "confidence": 70,
         }

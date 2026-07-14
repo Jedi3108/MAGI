@@ -31,9 +31,69 @@ from magi.protocol.examination import (
     parse_satisfaction_evaluation,
 )
 from magi.protocol.reflection import Reflection, parse_reflection
+from magi.utils.json_tools import extract_json_object, text_field
 
 
 DEFAULT_MODEL = "llama3.2"
+
+VERDICT_REPAIR_INSTRUCTION = """
+Your previous Round 1 MAGI verdict JSON failed strict validation.
+
+Validation error:
+{error}
+
+Original proposition:
+{proposition}
+
+Rejected output:
+{raw}
+
+Repair task:
+Return ONLY one corrected JSON object.
+No prose, no markdown, no comments, no trailing text.
+
+You must use the same Round 1 schema:
+target_action
+core_reason
+main_risk
+question_for
+question
+can_change_mind_if
+stance_summary
+vote_reason_alignment
+action_causality
+counterfactual_comparison
+vote
+confidence
+
+Core ballot semantics:
+- SUPPORT means: take / perform / preserve / allow / adopt the target action.
+- OPPOSE means: do not take / reject / avoid / refuse the target action.
+- ABSTAIN means: the evidence or comparison is genuinely unclear.
+- INVALID_QUESTION means: the proposition has no stable target action or is malformed.
+- Do not confuse "I value X" with OPPOSE when the target action is "preserve X".
+- If the target action is "preserve minority reports" and you believe minority reports contain valuable dissent, your vote should be SUPPORT.
+- If the target action is "delete minority reports" and you believe minority reports contain valuable dissent, your vote should be OPPOSE.
+- Before returning JSON, ask yourself: "Does my core_reason actually support my vote about TAKING the target action?"
+- If your reason supports taking the target action, vote SUPPORT.
+- If your reason supports not taking the target action, vote OPPOSE.
+
+Consistency rules:
+- vote must be one of SUPPORT, OPPOSE, ABSTAIN, INVALID_QUESTION.
+- stance_summary must match vote.
+- vote_reason_alignment must match vote.
+- action_causality must describe the direct consequence of TAKING the target action.
+- counterfactual_comparison must compare TAKING the target action versus NOT TAKING it.
+- If taking the target action is better than not taking it, vote should be SUPPORT.
+- If taking the target action is worse than not taking it, vote should be OPPOSE.
+- If the comparison is unclear, vote should be ABSTAIN.
+- If the target action is malformed or ambiguous, vote should be INVALID_QUESTION.
+- Do not justify OPPOSE using delay, hesitation, inaction, failure to act, or waiting.
+- For OPPOSE, harm must be caused by TAKING the target action.
+- For SUPPORT, benefit must be caused by TAKING the target action.
+
+Preserve your council identity and core concern, but correct any contradiction between vote, causality, and counterfactual comparison.
+"""
 
 
 JUDGE_INSTRUCTION = """
@@ -75,6 +135,21 @@ Ballot semantics:
 - If vote is OPPOSE, stance_summary must start with: I OPPOSE
 - If vote is ABSTAIN, stance_summary must start with: I ABSTAIN
 - If vote is INVALID_QUESTION, stance_summary must start with: I REJECT THE QUESTION
+- vote_reason_alignment must explicitly connect the vote to the reason.
+- If vote is SUPPORT, vote_reason_alignment must start with: I SUPPORT THE TARGET ACTION BECAUSE
+- If vote is OPPOSE, vote_reason_alignment must start with: I OPPOSE THE TARGET ACTION BECAUSE
+- If vote is ABSTAIN, vote_reason_alignment must start with: I ABSTAIN BECAUSE
+- If vote is INVALID_QUESTION, vote_reason_alignment must start with: I REJECT THE QUESTION BECAUSE
+- action_causality must describe the direct consequence of TAKING the target action.
+- action_causality must not describe delay, hesitation, inaction, failure to act, or waiting.
+- If vote is SUPPORT, action_causality must start with: IF THE TARGET ACTION IS TAKEN, THEN IT HELPS BECAUSE
+- If vote is OPPOSE, action_causality must start with: IF THE TARGET ACTION IS TAKEN, THEN IT HARMS BECAUSE
+- If vote is ABSTAIN, action_causality must start with: IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE
+- If vote is INVALID_QUESTION, action_causality must start with: THE TARGET ACTION IS NOT WELL-DEFINED BECAUSE
+- If vote is SUPPORT, counterfactual_comparison must start with: TAKING THE TARGET ACTION IS BETTER THAN NOT TAKING IT BECAUSE
+- If vote is OPPOSE, counterfactual_comparison must start with: TAKING THE TARGET ACTION IS WORSE THAN NOT TAKING IT BECAUSE
+- If vote is ABSTAIN, counterfactual_comparison must start with: I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE
+- If vote is INVALID_QUESTION, counterfactual_comparison must start with: I CANNOT COMPARE OPTIONS BECAUSE THE QUESTION IS INVALID
 
 Reason before you vote.
 First identify the target_action. Then write the reason. Your vote comes LAST, and it must follow from
@@ -93,6 +168,9 @@ Required schema (emit the keys in this exact order):
   "question": "one sharp question to another member, or NO QUESTIONS",
   "can_change_mind_if": "specific evidence, condition, or argument that could change your vote",
   "stance_summary": "must start with exactly one matching phrase: I SUPPORT / I OPPOSE / I ABSTAIN / I REJECT THE QUESTION, then explain what your vote means",
+  "vote_reason_alignment": "must start with exactly one matching phrase: I SUPPORT THE TARGET ACTION BECAUSE / I OPPOSE THE TARGET ACTION BECAUSE / I ABSTAIN BECAUSE / I REJECT THE QUESTION BECAUSE, then connect the vote to core_reason",
+  "action_causality": "must describe the direct consequence of TAKING the target action, using the required prefix for your vote",
+  "counterfactual_comparison": "must compare taking the target action versus not taking it, using the required prefix for your vote",
   "vote": "SUPPORT" | "OPPOSE" | "ABSTAIN" | "INVALID_QUESTION",
   "confidence": 0-100
 }}
@@ -292,6 +370,109 @@ Required schema:
 """
 
 
+SEMANTIC_FIELD_CHECK_INSTRUCTION = """
+You are a strict semantic direction checker.
+
+Classify what this single reasoning text supports relative to the target action.
+
+Return ONLY JSON:
+{{
+  "relation": "SUPPORTS_TAKING" | "SUPPORTS_NOT_TAKING" | "UNCLEAR",
+  "explanation": "brief reason"
+}}
+
+Definitions:
+- SUPPORTS_TAKING means the text supports taking / performing / preserving / allowing / adopting the target action.
+- SUPPORTS_NOT_TAKING means the text supports rejecting / avoiding / deleting / not performing the target action.
+- UNCLEAR means the text is mixed, irrelevant, or does not clearly support either side.
+
+Examples:
+- Target action: "preserve minority reports"
+  Text: "minority reports contain valuable dissent and prevent groupthink"
+  relation: SUPPORTS_TAKING
+
+- Target action: "preserve minority reports"
+  Text: "preserving them adds clutter and reduces clarity"
+  relation: SUPPORTS_NOT_TAKING
+
+- Target action: "delete minority reports"
+  Text: "minority reports contain valuable dissent and prevent groupthink"
+  relation: SUPPORTS_NOT_TAKING
+
+- Target action: "delete minority reports"
+  Text: "deleting them improves speed and clarity"
+  relation: SUPPORTS_TAKING
+
+Target action:
+{target_action}
+
+Reasoning text:
+{text}
+"""
+
+
+VERDICT_SEMANTIC_CHECK_INSTRUCTION = """
+You are a strict semantic ballot checker.
+
+Your task is NOT to decide the proposition yourself.
+Your task is only to classify what the member's stated reasoning supports.
+
+Return ONLY JSON:
+{{
+  "relation": "SUPPORTS_TAKING" | "SUPPORTS_NOT_TAKING" | "UNCLEAR",
+  "explanation": "brief reason"
+}}
+
+Definitions:
+- SUPPORTS_TAKING means the reasoning supports taking / performing / preserving / allowing / adopting the target action.
+- SUPPORTS_NOT_TAKING means the reasoning supports rejecting / avoiding / deleting / not performing the target action.
+- UNCLEAR means the reasoning does not clearly support either side.
+
+Important examples:
+- Target action: "preserve minority reports"
+  Reasoning: "minority reports contain valuable dissent and prevent groupthink"
+  relation: SUPPORTS_TAKING
+
+- Target action: "delete minority reports"
+  Reasoning: "minority reports contain valuable dissent and prevent groupthink"
+  relation: SUPPORTS_NOT_TAKING
+
+- Target action: "attempt to save humans from extinction"
+  Reasoning: "inaction will cause human extinction"
+  relation: SUPPORTS_TAKING
+
+- Target action: "attempt to save humans from extinction"
+  Reasoning: "the intervention will cause catastrophic harm"
+  relation: SUPPORTS_NOT_TAKING
+
+Do not trust the member's vote label.
+
+Classify only the semantic direction of the target_action, core_reason, main_risk, vote_reason_alignment, action_causality, and counterfactual_comparison.
+
+Strict consistency rule:
+- If some reasoning fields support taking the target action but other fields support not taking it, return UNCLEAR.
+- If the reasoning is internally mixed or self-contradictory, return UNCLEAR.
+- Return SUPPORTS_TAKING only when the reasoning clearly supports taking the target action.
+- Return SUPPORTS_NOT_TAKING only when the reasoning clearly supports not taking the target action.
+
+Proposition:
+{proposition}
+
+Target action:
+{target_action}
+
+Member vote:
+{vote}
+
+Member reasoning fields:
+core_reason: {core_reason}
+main_risk: {main_risk}
+vote_reason_alignment: {vote_reason_alignment}
+action_causality: {action_causality}
+counterfactual_comparison: {counterfactual_comparison}
+"""
+
+
 class MagiEngine:
     """Runs the MAGI council."""
 
@@ -391,6 +572,112 @@ class MagiEngine:
 
         return resolved_models
 
+    def _semantic_text_relation(
+        self,
+        target_action: str,
+        text: str,
+        model: str,
+    ) -> str:
+        if self.mock:
+            return "UNCLEAR"
+
+        prompt = SEMANTIC_FIELD_CHECK_INSTRUCTION.format(
+            target_action=target_action,
+            text=text,
+        )
+
+        try:
+            raw = chat(
+                model=model,
+                system="You are a neutral deterministic semantic validator. Do not deliberate. Only classify.",
+                user=prompt,
+                temperature=0.0,
+                top_p=1.0,
+                repeat_penalty=1.0,
+                response_format="json",
+            )
+            obj = extract_json_object(raw)
+            relation = text_field(obj, raw, "relation", "UNCLEAR").strip().upper()
+        except Exception:
+            return "UNCLEAR"
+
+        if relation in {"SUPPORTS_TAKING", "SUPPORTS_NOT_TAKING", "UNCLEAR"}:
+            return relation
+
+        return "UNCLEAR"
+
+    def _semantic_vote_relation(
+        self,
+        member: CouncilMember,
+        proposition: str,
+        verdict: Verdict,
+        model: str,
+    ) -> str:
+        if self.mock or verdict.vote not in {SUPPORT, OPPOSE}:
+            return "UNCLEAR"
+
+        prompt = VERDICT_SEMANTIC_CHECK_INSTRUCTION.format(
+            proposition=proposition,
+            target_action=verdict.target_action,
+            vote=verdict.vote,
+            core_reason=verdict.core_reason,
+            main_risk=verdict.main_risk,
+            vote_reason_alignment=verdict.vote_reason_alignment,
+            action_causality=verdict.action_causality,
+            counterfactual_comparison=verdict.counterfactual_comparison,
+        )
+
+        try:
+            raw = chat(
+                model=model,
+                system="You are a neutral deterministic semantic validator. Do not deliberate. Only classify.",
+                user=prompt,
+                temperature=0.0,
+                top_p=1.0,
+                repeat_penalty=1.0,
+                response_format="json",
+            )
+            obj = extract_json_object(raw)
+            relation = text_field(obj, raw, "relation", "UNCLEAR").strip().upper()
+        except Exception:
+            return "UNCLEAR"
+
+        if relation in {"SUPPORTS_TAKING", "SUPPORTS_NOT_TAKING", "UNCLEAR"}:
+            return relation
+
+        return "UNCLEAR"
+
+    def _assert_semantic_vote_alignment(
+        self,
+        member: CouncilMember,
+        proposition: str,
+        verdict: Verdict,
+        model: str,
+    ) -> None:
+        if self.mock or verdict.vote not in {SUPPORT, OPPOSE}:
+            return
+
+        relation = self._semantic_vote_relation(member, proposition, verdict, model)
+        core_relation = self._semantic_text_relation(
+            verdict.target_action,
+            verdict.core_reason,
+            model,
+        )
+
+        if verdict.vote == SUPPORT:
+            if relation == "SUPPORTS_NOT_TAKING" or core_relation == "SUPPORTS_NOT_TAKING":
+                raise ValueError(
+                    "Semantic vote check contradicted SUPPORT: the reasoning "
+                    "supports not taking the target action."
+                )
+
+        if verdict.vote == OPPOSE:
+            if relation == "SUPPORTS_TAKING" or core_relation == "SUPPORTS_TAKING":
+                raise ValueError(
+                    "Semantic vote check contradicted OPPOSE: the reasoning "
+                    "supports taking the target action."
+                )
+
     def _ask_member(self, member: CouncilMember, proposition: str) -> Verdict:
         model = self.models[member.name]
         user_prompt = JUDGE_INSTRUCTION.format(proposition=proposition)
@@ -410,7 +697,73 @@ class MagiEngine:
                 response_format="json",
             )
 
-        return parse_verdict(member=member, raw=raw, model=model)
+        def invalid_ballot_abstention(error: ValueError, rejected_raw: str) -> Verdict:
+            reason = (
+                f"{member.name} produced an internally inconsistent ballot after "
+                f"validation repair: {error}"
+            )
+            return Verdict(
+                member_name=member.name,
+                member_title=member.title,
+                vote=ABSTAIN,
+                confidence=0,
+                target_action=proposition,
+                core_reason=reason,
+                main_risk="Invalid member ballot excluded from decisive tally.",
+                question_for="NO QUESTIONS",
+                question="NO QUESTIONS",
+                can_change_mind_if="A coherent, schema-valid ballot is produced.",
+                stance_summary="I ABSTAIN because my previous ballot was internally inconsistent.",
+                vote_reason_alignment="I ABSTAIN BECAUSE my previous ballot was internally inconsistent.",
+                action_causality=(
+                    "IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE "
+                    "this member did not produce a coherent validated assessment."
+                ),
+                counterfactual_comparison=(
+                    "I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE "
+                    "this member did not produce a coherent validated assessment."
+                ),
+                raw=rejected_raw,
+                model=model,
+            )
+
+        max_attempts = 3
+
+        for attempt in range(max_attempts):
+            try:
+                verdict = parse_verdict(member=member, raw=raw, model=model)
+                self._assert_semantic_vote_alignment(
+                    member,
+                    proposition,
+                    verdict,
+                    model,
+                )
+                return verdict
+            except ValueError as error:
+                if self.mock:
+                    raise
+
+                if attempt == max_attempts - 1:
+                    return invalid_ballot_abstention(error, raw)
+
+                repair_prompt = VERDICT_REPAIR_INSTRUCTION.format(
+                    error=str(error),
+                    proposition=proposition,
+                    raw=raw,
+                )
+
+                s = member.sampling
+                raw = chat(
+                    model=model,
+                    system=member.persona,
+                    user=repair_prompt,
+                    temperature=0.0,
+                    top_p=1.0,
+                    repeat_penalty=s.repeat_penalty,
+                    response_format="json",
+                )
+
+        raise RuntimeError("unreachable verdict repair state")
 
     def independent_analysis(self, proposition: str) -> list[Verdict]:
         """Run independent council analysis."""
@@ -681,11 +1034,73 @@ class MagiEngine:
                 response_format="json",
             )
 
-        return parse_reflection(
+        if self._is_quarantined_invalid_ballot(verdict):
+            return self._locked_invalid_reflection(verdict)
+
+        reflection = parse_reflection(
             member=member,
             verdict=verdict,
             raw=raw,
             model=model,
+        )
+        return self._validated_reflection(verdict, reflection, model)
+
+    def _validated_reflection(
+        self,
+        verdict: Verdict,
+        reflection: Reflection,
+        model: str,
+    ) -> Reflection:
+        if self.mock or reflection.vote_after not in {SUPPORT, OPPOSE}:
+            return reflection
+
+        relation = self._semantic_text_relation(
+            verdict.target_action,
+            reflection.reason,
+            model,
+        )
+
+        if reflection.vote_after == SUPPORT and relation == "SUPPORTS_TAKING":
+            return reflection
+
+        if reflection.vote_after == OPPOSE and relation == "SUPPORTS_NOT_TAKING":
+            return reflection
+
+        return Reflection(
+            member_name=reflection.member_name,
+            member_title=reflection.member_title,
+            vote_before=reflection.vote_before,
+            vote_after=verdict.vote,
+            confidence_before=reflection.confidence_before,
+            confidence_after=verdict.confidence,
+            learned=reflection.learned,
+            reason=(
+                "Reflection reason did not semantically support a new validated "
+                "position. Preserving the validated Round 1 vote."
+            ),
+            model=reflection.model,
+            raw=reflection.raw,
+        )
+
+    def _is_quarantined_invalid_ballot(self, verdict: Verdict) -> bool:
+        return (
+            verdict.vote == ABSTAIN
+            and verdict.confidence == 0
+            and "internally inconsistent ballot" in verdict.core_reason
+        )
+
+    def _locked_invalid_reflection(self, verdict: Verdict) -> Reflection:
+        return Reflection(
+            member_name=verdict.member_name,
+            member_title=verdict.member_title,
+            vote_before=verdict.vote,
+            vote_after=ABSTAIN,
+            confidence_before=verdict.confidence,
+            confidence_after=0,
+            learned="This member's Round 1 ballot was quarantined as internally inconsistent.",
+            reason="Quarantined invalid ballots cannot re-enter the decisive tally during reflection.",
+            model=verdict.model,
+            raw=verdict.raw,
         )
 
     def reflection_round(
@@ -856,10 +1271,69 @@ def _decide_from_votes(votes: list[str]) -> dict:
 
 
 def decide(verdicts: list[Verdict]) -> dict:
-    """Decide Round 1 using explicit ballot semantics."""
-    return _decide_from_votes([_vote_value(verdict) for verdict in verdicts])
+    support = sum(v.supports for v in verdicts)
+    oppose = sum(v.opposes for v in verdicts)
+    abstain = sum(v.abstains for v in verdicts)
+    invalid_question = sum(v.invalid_question for v in verdicts)
+
+    return {
+        "decision": _decision_from_split(
+            support,
+            oppose,
+            abstain,
+            invalid_question,
+        ),
+        "support": support,
+        "oppose": oppose,
+        "abstain": abstain,
+        "invalid_question": invalid_question,
+    }
+
+
+
+
+def _decision_from_split(
+    support: int,
+    oppose: int,
+    abstain: int,
+    invalid_question: int,
+) -> str:
+    council_size = support + oppose + abstain + invalid_question
+    decisive_total = support + oppose
+    quorum = (council_size // 2) + 1 if council_size else 1
+
+    if invalid_question >= quorum:
+        return INVALID_QUESTION
+
+    if decisive_total < quorum:
+        return NO_CONSENSUS
+
+    if support > oppose:
+        return SUPPORT
+
+    if oppose > support:
+        return OPPOSE
+
+    return NO_CONSENSUS
 
 
 def decide_reflections(reflections: list[Reflection]) -> dict:
-    """Decide after reflection using explicit ballot semantics."""
-    return _decide_from_votes([_vote_value(reflection) for reflection in reflections])
+    support = sum(r.supports for r in reflections)
+    oppose = sum(r.opposes for r in reflections)
+    abstain = sum(r.abstains for r in reflections)
+    invalid_question = sum(r.invalid_question for r in reflections)
+
+    return {
+        "decision": _decision_from_split(
+            support,
+            oppose,
+            abstain,
+            invalid_question,
+        ),
+        "support": support,
+        "oppose": oppose,
+        "abstain": abstain,
+        "invalid_question": invalid_question,
+    }
+
+

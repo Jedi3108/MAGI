@@ -81,6 +81,9 @@ class TestParsingIsOrderIndependent(unittest.TestCase):
                 "question": "what is fragile?",
                 "can_change_mind_if": "new data",
                 "stance_summary": "I SUPPORT the action.",
+                "vote_reason_alignment": "I SUPPORT THE TARGET ACTION BECAUSE the reason supports the action.",
+                "action_causality": "IF THE TARGET ACTION IS TAKEN, THEN IT HELPS BECAUSE the reason supports the action.",
+                "counterfactual_comparison": "TAKING THE TARGET ACTION IS BETTER THAN NOT TAKING IT BECAUSE the reason supports action.",
                 "vote": "SUPPORT",
                 "confidence": 77,
             }

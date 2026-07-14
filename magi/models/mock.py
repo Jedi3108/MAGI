@@ -24,6 +24,51 @@ def _stance_summary_for_vote(vote: str) -> str:
 from magi.council.members import VALID_MEMBER_NAMES
 
 
+def _vote_reason_alignment_for_vote(vote: str) -> str:
+    vote = str(vote).strip().upper()
+
+    if vote == "SUPPORT":
+        return "I SUPPORT THE TARGET ACTION BECAUSE the mock council member accepts the proposed action."
+    if vote == "OPPOSE":
+        return "I OPPOSE THE TARGET ACTION BECAUSE the mock council member rejects the proposed action."
+    if vote == "ABSTAIN":
+        return "I ABSTAIN BECAUSE the mock council member lacks enough information."
+    if vote == "INVALID_QUESTION":
+        return "I REJECT THE QUESTION BECAUSE the mock council member finds the proposition malformed."
+
+    return "I ABSTAIN BECAUSE the mock vote is unclear."
+
+
+def _action_causality_for_vote(vote: str) -> str:
+    vote = str(vote).strip().upper()
+
+    if vote == "SUPPORT":
+        return "IF THE TARGET ACTION IS TAKEN, THEN IT HELPS BECAUSE the mock action has expected benefits."
+    if vote == "OPPOSE":
+        return "IF THE TARGET ACTION IS TAKEN, THEN IT HARMS BECAUSE the mock action has expected risks."
+    if vote == "ABSTAIN":
+        return "IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE the mock evidence is incomplete."
+    if vote == "INVALID_QUESTION":
+        return "THE TARGET ACTION IS NOT WELL-DEFINED BECAUSE the mock proposition is malformed."
+
+    return "IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE the mock vote is unclear."
+
+
+def _counterfactual_comparison_for_vote(vote: str) -> str:
+    vote = str(vote).strip().upper()
+
+    if vote == "SUPPORT":
+        return "TAKING THE TARGET ACTION IS BETTER THAN NOT TAKING IT BECAUSE the mock benefits outweigh the mock risks."
+    if vote == "OPPOSE":
+        return "TAKING THE TARGET ACTION IS WORSE THAN NOT TAKING IT BECAUSE the mock risks outweigh the mock benefits."
+    if vote == "ABSTAIN":
+        return "I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE the mock evidence is incomplete."
+    if vote == "INVALID_QUESTION":
+        return "I CANNOT COMPARE OPTIONS BECAUSE THE QUESTION IS INVALID."
+
+    return "I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE the mock vote is unclear."
+
+
 def mock_verdict(member_name: str, prompt: str) -> str:
     """Return a deterministic fake verdict as JSON."""
     seed = int(hashlib.sha256((member_name + prompt).encode("utf-8")).hexdigest(), 16)
@@ -44,6 +89,9 @@ def mock_verdict(member_name: str, prompt: str) -> str:
     return json.dumps(
         {
             "stance_summary": _stance_summary_for_vote(vote),
+            "vote_reason_alignment": _vote_reason_alignment_for_vote(vote),
+            "action_causality": _action_causality_for_vote(vote),
+            "counterfactual_comparison": _counterfactual_comparison_for_vote(vote),
             "vote": vote,
             "confidence": confidence,
             "core_reason": f"[MOCK] {member_name} leans {vote.lower()} based on its facet.",
