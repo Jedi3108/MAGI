@@ -7,7 +7,7 @@ from typing import Callable
 
 from magi.chair.dossier import DecisionDossier, parse_decision_dossier
 from magi.chair.record import build_structured_chair_record
-from magi.council.members import COUNCIL, CouncilMember
+from magi.council.members import CHAIR_SAMPLING, COUNCIL, CouncilMember
 from magi.council.verdict import Verdict, parse_verdict
 from magi.models.mock import (
     mock_answer,
@@ -39,19 +39,24 @@ DEFAULT_MODEL = "llama3.2"
 JUDGE_INSTRUCTION = """
 You are taking part in Round 1 of the MAGI deliberation protocol: Independent Analysis.
 
-Evaluate the proposition strictly through your own council identity.
+You are ONE facet of the council, and only one. Judge this proposition strictly
+through your own charge, as defined by your identity in the system prompt.
+
+Do not reason on behalf of the other members.
+Do not try to be balanced. Do not average competing concerns.
+Balance is the council's job, not yours. Your job is to represent your facet without compromise.
 
 Do not imitate the other council members.
 Do not give a generic assistant answer.
+Do not retreat to the safe, agreeable, or middle-of-the-road position.
 Do not force consensus.
-Disagreement is allowed.
-A minority position is valuable if it exposes a real concern.
 
-Use your facet to produce a concrete judgment:
-- MELCHIOR cares about evidence, truth, uncertainty, and technical correctness.
-- BALTHASAR cares about safety, harm, care, stability, and sustainability.
-- CASPER cares about individuality, dignity, desire, aesthetics, and suppressed perspectives.
-- ARTABAN cares about action, duty, execution, accountability, and consequences.
+If your facet pulls against the obvious answer, follow your facet and name the conflict openly.
+Disagreement is allowed.
+A minority position is valuable if it exposes a real concern your facet sees and others would miss.
+
+Your core_reason must be the judgment your facet forces on you,
+not a summary of what a reasonable person would conclude.
 
 Confidence calibration:
 - 50 means genuinely uncertain.
@@ -60,19 +65,23 @@ Confidence calibration:
 - 80 means strong position with some uncertainty.
 - 90+ should be rare and requires unusually strong justification.
 
+Reason before you vote.
+Emit the keys in exactly the order given below. Your vote comes LAST, and it must follow from
+the core_reason you have just written. Do not decide first and justify afterwards.
+
 Return ONLY one valid JSON object.
 No prose, no markdown, no comments, no trailing text.
 All string values must be plain text.
 
-Required schema:
+Required schema (emit the keys in this exact order):
 {{
-  "vote": "AFFIRMATIVE" | "NEGATIVE",
-  "confidence": 0-100,
   "core_reason": "one concrete reason, written in your council voice",
   "main_risk": "one concrete failure mode or danger",
   "question_for": "MELCHIOR" | "BALTHASAR" | "CASPER" | "ARTABAN" | "NO QUESTIONS",
   "question": "one sharp question to another member, or NO QUESTIONS",
-  "can_change_mind_if": "specific evidence, condition, or argument that could change your vote"
+  "can_change_mind_if": "specific evidence, condition, or argument that could change your vote",
+  "vote": "AFFIRMATIVE" | "NEGATIVE",
+  "confidence": 0-100
 }}
 
 Proposition:
@@ -138,10 +147,12 @@ Return ONLY one valid JSON object.
 No prose, no markdown, no comments, no trailing text.
 All string values must be plain text.
 
-Required schema:
+Write your reason first. Your satisfaction rating must follow from the reason you just wrote.
+
+Required schema (emit the keys in this exact order):
 {{
-  "satisfaction": "SATISFIED" | "PARTIALLY SATISFIED" | "NOT SATISFIED",
   "reason": "one or two sentences explaining your evaluation",
+  "satisfaction": "SATISFIED" | "PARTIALLY SATISFIED" | "NOT SATISFIED",
   "confidence_delta": -100 to 100
 }}
 """
@@ -159,15 +170,27 @@ Confidence: {confidence_before}
 Reason: {core_reason}
 Risk: {main_risk}
 
+In Round 1 you committed, in your own words, to the ONE condition under which you would change your vote:
+"{change_condition}"
+
 Council deliberation context:
 {deliberation_context}
 
 Reflect on the exchange.
 
+Refutation gate — apply this BEFORE deciding your vote:
+- Identify the single strongest argument raised against your core reason.
+- Ask honestly: did it DEFEAT your core reason, or did it merely offer a reasonable-sounding alternative?
+- A compromise, a hybrid proposal, or a middle-ground solution is NOT a defeater.
+- Another member's confidence, or the discussion converging toward agreement, is NOT a defeater. Social agreement is not evidence.
+- You may change your vote ONLY if the specific condition you named above was actually met by the debate.
+- If that condition was not met, you MUST preserve your vote. You may lower your confidence to reflect new sympathy or doubt, but you may not flip.
+
 Rules:
 - State what you genuinely learned, if anything.
 - Preserve your vote if the exchange did not defeat your core reason.
-- Change your vote only if the debate exposed a stronger reason.
+- Change your vote only if the debate exposed a stronger reason that meets your own stated condition.
+- Do not abandon your facet because the rest of the council disagreed with you. A lone position that was not refuted must be held.
 - Adjust confidence realistically.
 - Your learned statement, final vote, confidence, and reason must not contradict each other.
 - If your reasoning now supports the opposite vote, change the vote or explain why you still reject it.
@@ -179,12 +202,15 @@ Return ONLY one valid JSON object.
 No prose, no markdown, no comments, no trailing text.
 All string values must be plain text.
 
-Required schema:
+Write "learned" and "reason" first. Your vote comes LAST and must follow from the reason you
+just wrote. Do not decide first and justify afterwards.
+
+Required schema (emit the keys in this exact order):
 {{
   "learned": "one or two sentences about what changed in your understanding",
+  "reason": "one or two sentences explaining why your vote/confidence changed or stayed the same",
   "vote_after_reflection": "AFFIRMATIVE" | "NEGATIVE",
-  "confidence_after_reflection": 0-100,
-  "reason": "one or two sentences explaining why your vote/confidence changed or stayed the same"
+  "confidence_after_reflection": 0-100
 }}
 """
 
@@ -354,7 +380,16 @@ class MagiEngine:
             raw = mock_verdict(member.name, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=member.persona, user=user_prompt, response_format="json")
+            s = member.sampling
+            raw = chat(
+                model=model,
+                system=member.persona,
+                user=user_prompt,
+                temperature=s.temperature,
+                top_p=s.top_p,
+                repeat_penalty=s.repeat_penalty,
+                response_format="json",
+            )
 
         return parse_verdict(member=member, raw=raw, model=model)
 
@@ -488,7 +523,16 @@ class MagiEngine:
             raw = mock_answer(target.name, question.question, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=target.persona, user=user_prompt, response_format="json")
+            s = target.sampling
+            raw = chat(
+                model=model,
+                system=target.persona,
+                user=user_prompt,
+                temperature=s.temperature,
+                top_p=s.top_p,
+                repeat_penalty=s.repeat_penalty,
+                response_format="json",
+            )
 
         return parse_cross_examination_answer(
             question=question,
@@ -540,7 +584,16 @@ class MagiEngine:
             raw = mock_evaluation(asker.name, answer.answer, user_prompt)
             model = "mock"
         else:
-            raw = chat(model=model, system=asker.persona, user=user_prompt, response_format="json")
+            s = asker.sampling
+            raw = chat(
+                model=model,
+                system=asker.persona,
+                user=user_prompt,
+                temperature=s.temperature,
+                top_p=s.top_p,
+                repeat_penalty=s.repeat_penalty,
+                response_format="json",
+            )
 
         return parse_satisfaction_evaluation(
             answer=answer,
@@ -585,6 +638,7 @@ class MagiEngine:
             confidence_before=verdict.confidence,
             core_reason=verdict.core_reason,
             main_risk=verdict.main_risk,
+            change_condition=verdict.can_change_mind_if,
             deliberation_context=self._deliberation_context(answers, evaluations),
         )
 
@@ -597,7 +651,16 @@ class MagiEngine:
             )
             model = "mock"
         else:
-            raw = chat(model=model, system=member.persona, user=user_prompt, response_format="json")
+            s = member.sampling
+            raw = chat(
+                model=model,
+                system=member.persona,
+                user=user_prompt,
+                temperature=s.temperature,
+                top_p=s.top_p,
+                repeat_penalty=s.repeat_penalty,
+                response_format="json",
+            )
 
         return parse_reflection(
             member=member,
@@ -667,6 +730,9 @@ class MagiEngine:
                     "You summarize faithfully. You do not add a new vote."
                 ),
                 user=user_prompt,
+                temperature=CHAIR_SAMPLING.temperature,
+                top_p=CHAIR_SAMPLING.top_p,
+                repeat_penalty=CHAIR_SAMPLING.repeat_penalty,
                 response_format="json",
             )
 

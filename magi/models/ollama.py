@@ -175,6 +175,8 @@ def chat(
     system: str,
     user: str,
     temperature: float = 0.2,
+    top_p: float | None = None,
+    repeat_penalty: float | None = None,
     response_format: str | dict[str, Any] | None = None,
 ) -> str:
     """Call Ollama chat API.
@@ -183,7 +185,18 @@ def chat(
     - "json"
     - a JSON schema dictionary
     - None
+
+    top_p and repeat_penalty are optional per-facet sampling controls. When
+    omitted, Ollama's model defaults apply.
     """
+    options: dict[str, Any] = {"temperature": temperature}
+
+    if top_p is not None:
+        options["top_p"] = top_p
+
+    if repeat_penalty is not None:
+        options["repeat_penalty"] = repeat_penalty
+
     payload: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -197,9 +210,7 @@ def chat(
             },
         ],
         "stream": False,
-        "options": {
-            "temperature": temperature,
-        },
+        "options": options,
     }
 
     if response_format is not None:

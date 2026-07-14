@@ -29,13 +29,13 @@ class Reflection:
         return self.vote_after == "AFFIRMATIVE"
 
 
-def _clean_vote(value: object, fallback: str) -> str:
-    vote = str(value or fallback).strip().upper()
+def _clean_vote(value: object) -> str:
+    vote = str(value or "").strip().upper()
 
     if vote in {"AFFIRMATIVE", "NEGATIVE"}:
         return vote
 
-    return fallback
+    raise ValueError(f"Invalid reflection vote token: {value!r}")
 
 
 def parse_reflection(
@@ -47,18 +47,13 @@ def parse_reflection(
     """Parse a reflection response."""
     obj = extract_json_object(raw)
 
-    vote_raw = text_field(
-        obj,
-        raw,
-        "vote_after_reflection",
-        verdict.vote,
-    )
+    vote_raw = text_field(obj, raw, "vote_after_reflection", None)
 
     return Reflection(
         member_name=member.name,
         member_title=member.title,
         vote_before=verdict.vote,
-        vote_after=_clean_vote(vote_raw, verdict.vote),
+        vote_after=_clean_vote(vote_raw),
         confidence_before=verdict.confidence,
         confidence_after=int_field(
             obj,
