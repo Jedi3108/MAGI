@@ -30,6 +30,24 @@ def raw_vote(vote):
                 ABSTAIN: "I ABSTAIN because evidence is insufficient.",
                 INVALID_QUESTION: "I REJECT THE QUESTION because the proposition framing is invalid.",
             }.get(vote, "I ABSTAIN because this legacy vote token is invalid."),
+            "vote_reason_alignment": {
+                SUPPORT: "I SUPPORT THE TARGET ACTION BECAUSE the reason supports the action.",
+                OPPOSE: "I OPPOSE THE TARGET ACTION BECAUSE the reason opposes the action.",
+                ABSTAIN: "I ABSTAIN BECAUSE evidence is insufficient.",
+                INVALID_QUESTION: "I REJECT THE QUESTION BECAUSE the framing is invalid.",
+            }.get(vote, "I ABSTAIN BECAUSE the legacy vote token is invalid."),
+            "action_causality": {
+                "SUPPORT": "IF THE TARGET ACTION IS TAKEN, THEN IT HELPS BECAUSE the reason supports the action.",
+                "OPPOSE": "IF THE TARGET ACTION IS TAKEN, THEN IT HARMS BECAUSE the reason opposes the action.",
+                "ABSTAIN": "IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE evidence is insufficient.",
+                "INVALID_QUESTION": "THE TARGET ACTION IS NOT WELL-DEFINED BECAUSE the framing is invalid.",
+            }.get(str(vote).strip().upper(), "IF THE TARGET ACTION IS TAKEN, THEN THE EFFECT IS UNCLEAR BECAUSE the vote token is invalid."),
+            "counterfactual_comparison": {
+                "SUPPORT": "TAKING THE TARGET ACTION IS BETTER THAN NOT TAKING IT BECAUSE the reason supports action.",
+                "OPPOSE": "TAKING THE TARGET ACTION IS WORSE THAN NOT TAKING IT BECAUSE the reason opposes action.",
+                "ABSTAIN": "I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE evidence is insufficient.",
+                "INVALID_QUESTION": "I CANNOT COMPARE OPTIONS BECAUSE THE QUESTION IS INVALID.",
+            }.get(str(vote).strip().upper(), "I CANNOT COMPARE TAKING VS NOT TAKING THE TARGET ACTION BECAUSE the vote token is invalid."),
             "vote": vote,
             "confidence": 70,
         }
@@ -49,7 +67,12 @@ def verdict(name, vote):
         can_change_mind_if="evidence",
         model="test-model",
         target_action="test action",
-        stance_summary="stance",
+        stance_summary="I SUPPORT the action." if vote == SUPPORT else "I OPPOSE the action.",
+        vote_reason_alignment=(
+            "I SUPPORT THE TARGET ACTION BECAUSE the reason supports the action."
+            if vote == SUPPORT
+            else "I OPPOSE THE TARGET ACTION BECAUSE the reason opposes the action."
+        ),
     )
 
 
