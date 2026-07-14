@@ -35,7 +35,7 @@ def _clean_vote(value: object) -> str:
     if vote in {"AFFIRMATIVE", "NEGATIVE"}:
         return vote
 
-    return "NEGATIVE"
+    raise ValueError(f"Invalid vote token: {value!r}")
 
 
 def _clean_question_for(value: object, raw: str) -> str:
@@ -59,7 +59,7 @@ def parse_verdict(member: CouncilMember, raw: str, model: str) -> Verdict:
     """Parse a model response into a Verdict."""
     obj = extract_json_object(raw)
 
-    vote = _clean_vote(text_field(obj, raw, "vote", "NEGATIVE"))
+    vote = _clean_vote(text_field(obj, raw, "vote", None))
     question_for = _clean_question_for(obj.get("question_for"), raw)
     question = text_field(obj, raw, "question", "NO QUESTIONS")
 
