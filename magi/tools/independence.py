@@ -31,6 +31,7 @@ from typing import Callable, Iterable
 
 from magi.council.members import COUNCIL
 from magi.protocol.engine import MagiEngine
+from magi.tools import telemetry
 
 SUPPORT = "SUPPORT"
 OPPOSE = "OPPOSE"
@@ -84,6 +85,9 @@ class ProbeReport:
     repetitions: int
     full: bool
     samples: list[Sample]
+    telemetry: telemetry.TelemetrySnapshot = field(
+        default_factory=telemetry.TelemetrySnapshot
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -135,6 +139,9 @@ def run_probe(
     members = [m.name for m in COUNCIL]
     samples: list[Sample] = []
 
+    # Counters are global; clear them so this run's numbers are its own.
+    telemetry.reset()
+
     for proposition in propositions:
         for rep in range(repetitions):
             if progress:
@@ -147,6 +154,7 @@ def run_probe(
         repetitions=repetitions,
         full=full,
         samples=samples,
+        telemetry=telemetry.snapshot(),
     )
 
 
