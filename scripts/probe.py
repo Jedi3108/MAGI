@@ -103,7 +103,7 @@ def render_member_table(report: ProbeReport, phase: str) -> None:
 
     print(f"\n{C.BOLD}PER-MEMBER PROFILE{C.RESET}")
     print(f"{C.GREY}stability = vote consistency across repetitions of the same proposition{C.RESET}\n")
-    print(f"  {'MEMBER':<12}{'STABILITY':>11}{'SUPPORT RATE':>13}{'MEAN CONF':>11}")
+    print(f"  {'MEMBER':<12}{'STABILITY':>11}{'SUPPORT':>9}{'ABSTAIN':>9}{'MEAN CONF':>11}")
     for m in members:
         stab_color = C.RED if stab[m] < NOISY_STABILITY else C.RESET
         stuck = aff[m] in (0.0, 1.0) and len(report.propositions) > 1
@@ -126,6 +126,47 @@ def render_member_table(report: ProbeReport, phase: str) -> None:
               f"{', '.join(stuck)} — check facet binding or silent-default votes.")
 
 
+def render_quarantine_causes(report: ProbeReport) -> None:
+    stats = report.telemetry
+
+    print(f"\n{C.BOLD}WHY BALLOTS DIE{C.RESET}")
+
+    if not stats.total_failures:
+        print(f"{C.GREEN}  No validation failures. Every ballot passed first time.{C.RESET}")
+        return
+
+    print(f"{C.GREY}(field / mechanism — 'killed' = ended the ballot after all repair attempts){C.RESET}\n")
+    print(f"  {'FIELD':<28}{'MECHANISM':<22}{'FAILED':>8}{'KILLED':>8}")
+
+    for (field_name, kind), count in stats.top_causes(10):
+        killed = stats.quarantines.get((field_name, kind), 0)
+        colour = C.RED if killed else C.RESET
+        print(f"  {colour}{field_name:<28}{kind:<22}{count:>8}{killed:>8}{C.RESET}")
+
+    attempted = stats.repairs.get("attempted", 0)
+    succeeded = stats.repairs.get("succeeded", 0)
+    print(
+        f"\n  {'Repair:':<28}{succeeded}/{attempted} recovered "
+        f"({stats.repair_success_rate:.0%})   "
+        f"{'Quarantined:':<14}{stats.total_quarantines}"
+    )
+
+    if stats.quarantines_by_member:
+        worst = ", ".join(
+            f"{m} {n}" for m, n in stats.quarantines_by_member.most_common()
+        )
+        print(f"  {'Quarantines by member:':<28}{worst}")
+
+    killers = stats.top_killers(1)
+    if killers:
+        (field_name, kind), n = killers[0]
+        print(
+            f"\n{C.AMBER}Top killer: {field_name} / {kind} "
+            f"({n} of {stats.total_quarantines} quarantines).{C.RESET}"
+        )
+        print(f"{C.GREY}  Fix this one, then re-run and watch the abstain rate.{C.RESET}")
+
+
 def render_report(report: ProbeReport) -> None:
     print(f"\n{C.AMBER}{'═' * 72}{C.RESET}")
     print(f"{C.AMBER}{C.BOLD}MAGI INDEPENDENCE PROBE{C.RESET}")
@@ -141,6 +182,7 @@ def render_report(report: ProbeReport) -> None:
 
     render_agreement_matrix(report, PHASE_ROUND1)
     render_member_table(report, PHASE_ROUND1)
+    render_quarantine_causes(report)
 
     if report.full:
         render_agreement_matrix(report, PHASE_REFLECTED)

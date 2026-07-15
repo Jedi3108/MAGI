@@ -9,6 +9,7 @@ from magi.chair.dossier import DecisionDossier, parse_decision_dossier
 from magi.chair.record import build_structured_chair_record
 from magi.council.members import CHAIR_SAMPLING, COUNCIL, CouncilMember
 from magi.council.verdict import ABSTAIN, INVALID_QUESTION, NO_CONSENSUS, OPPOSE, SUPPORT, Verdict, parse_verdict
+from magi.tools import telemetry
 from magi.models.mock import (
     mock_answer,
     mock_chair_dossier,
@@ -738,13 +739,20 @@ class MagiEngine:
                     verdict,
                     model,
                 )
+                if attempt > 0:
+                    telemetry.record_repair_success(member.name)
                 return verdict
             except ValueError as error:
                 if self.mock:
                     raise
 
+                telemetry.record_failure(member.name, error)
+
                 if attempt == max_attempts - 1:
+                    telemetry.record_quarantine(member.name, error)
                     return invalid_ballot_abstention(error, raw)
+
+                telemetry.record_repair_attempt(member.name)
 
                 repair_prompt = VERDICT_REPAIR_INSTRUCTION.format(
                     error=str(error),
