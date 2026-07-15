@@ -25,12 +25,15 @@ from magi.protocol.engine import MagiEngine
 from magi.tools.independence import (
     COLLAPSE_AGREEMENT,
     DEFAULT_PROPOSITIONS,
+    HIGH_ABSTAIN,
     NOISY_STABILITY,
     PHASE_REFLECTED,
     PHASE_ROUND1,
     ProbeReport,
+    abstain_rate,
     support_rate,
     convergence,
+    decisive_agreement,
     mean_confidence,
     member_stability,
     pairwise_agreement,
@@ -70,18 +73,25 @@ def render_agreement_matrix(report: ProbeReport, phase: str) -> None:
             row += f"{color}{value:>7.2f}{C.RESET}"
         print(row)
 
+    decisive = decisive_agreement(report.samples, members, phase)
+    print(f"\n{C.GREY}Decisive-only agreement (ABSTAIN/INVALID excluded; n = real positions){C.RESET}")
+    for (a, b), (value, n) in sorted(decisive.items()):
+        note = f"{C.RED}  <- too few positions to trust{C.RESET}" if n < 3 else ""
+        colour = C.RED if value >= COLLAPSE_AGREEMENT and n >= 3 else C.RESET
+        print(f"  {_abbr(a)}/{_abbr(b)}  {colour}{value:>5.2f}{C.RESET}  n={n}{note}")
+
     flagged = [
         (a, b, v)
-        for (a, b), v in pairs.items()
-        if v >= COLLAPSE_AGREEMENT
+        for (a, b), (v, n) in decisive.items()
+        if v >= COLLAPSE_AGREEMENT and n >= 3
     ]
     if flagged:
-        print(f"\n{C.RED}Possible facet collapse:{C.RESET}")
+        print(f"\n{C.RED}Possible facet collapse (on real positions):{C.RESET}")
         for a, b, v in flagged:
-            print(f"  {a} / {b} agree {v:.0%} of the time — behaving as one voice.")
+            print(f"  {a} / {b} agree {v:.0%} where both took a position — one voice.")
     else:
-        print(f"\n{C.GREEN}No pair exceeds the collapse threshold "
-              f"({COLLAPSE_AGREEMENT:.0%}). The voices are distinct.{C.RESET}")
+        print(f"\n{C.GREEN}No pair exceeds the collapse threshold ({COLLAPSE_AGREEMENT:.0%}) "
+              f"on decisive votes.{C.RESET}")
 
 
 def render_member_table(report: ProbeReport, phase: str) -> None:
@@ -89,6 +99,7 @@ def render_member_table(report: ProbeReport, phase: str) -> None:
     stab = member_stability(report.samples, members, phase)
     aff = support_rate(report.samples, members, phase)
     conf = mean_confidence(report.samples, members, phase)
+    drop = abstain_rate(report.samples, members, phase)
 
     print(f"\n{C.BOLD}PER-MEMBER PROFILE{C.RESET}")
     print(f"{C.GREY}stability = vote consistency across repetitions of the same proposition{C.RESET}\n")
@@ -97,10 +108,12 @@ def render_member_table(report: ProbeReport, phase: str) -> None:
         stab_color = C.RED if stab[m] < NOISY_STABILITY else C.RESET
         stuck = aff[m] in (0.0, 1.0) and len(report.propositions) > 1
         aff_color = C.AMBER if stuck else C.RESET
+        drop_color = C.RED if drop[m] > HIGH_ABSTAIN else C.RESET
         print(
             f"  {m:<12}"
             f"{stab_color}{stab[m]:>11.2f}{C.RESET}"
-            f"{aff_color}{aff[m]:>13.2f}{C.RESET}"
+            f"{aff_color}{aff[m]:>9.2f}{C.RESET}"
+            f"{drop_color}{drop[m]:>9.2f}{C.RESET}"
             f"{conf[m]:>11.1f}"
         )
 

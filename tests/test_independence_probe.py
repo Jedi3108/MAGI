@@ -7,6 +7,8 @@ depend on mock randomness.
 import unittest
 
 from magi.tools.independence import (
+    abstain_rate,
+    decisive_agreement,
     PHASE_ROUND1,
     Sample,
     support_rate,
@@ -113,3 +115,35 @@ class TestProbeRunsUnderMock(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBallotVocabularyMigration(unittest.TestCase):
+    """The probe was written for a binary vote. These lock the 4-valued ballot."""
+
+    def test_stability_does_not_conflate_oppose_with_abstain(self):
+        casts = ["OPPOSE", "ABSTAIN", "OPPOSE", "ABSTAIN", "ABSTAIN"]
+        samples = [
+            _s("p", i, {"CASPER": v}) for i, v in enumerate(casts)
+        ]
+        # Modal vote is ABSTAIN (3/5). Must NOT report 1.0.
+        self.assertAlmostEqual(member_stability(samples, ["CASPER"])["CASPER"], 0.6)
+
+    def test_decisive_agreement_ignores_quarantined_ballots(self):
+        samples = [
+            _s("p", 0, {"MELCHIOR": "ABSTAIN", "CASPER": "ABSTAIN"}),
+            _s("p", 1, {"MELCHIOR": "SUPPORT", "CASPER": "OPPOSE"}),
+        ]
+        agree, n = decisive_agreement(samples, ["MELCHIOR", "CASPER"])[("CASPER", "MELCHIOR")]
+        # Only one sample had two real positions, and they disagreed.
+        self.assertEqual(n, 1)
+        self.assertEqual(agree, 0.0)
+
+    def test_two_quarantined_members_are_not_counted_as_agreeing(self):
+        samples = [_s("p", 0, {"MELCHIOR": "ABSTAIN", "CASPER": "ABSTAIN"})]
+        agree, n = decisive_agreement(samples, ["MELCHIOR", "CASPER"])[("CASPER", "MELCHIOR")]
+        self.assertEqual(n, 0)
+
+    def test_abstain_rate_counts_non_positions(self):
+        casts = ["SUPPORT", "ABSTAIN", "OPPOSE", "INVALID_QUESTION"]
+        samples = [_s("p", i, {"ARTABAN": v}) for i, v in enumerate(casts)]
+        self.assertEqual(abstain_rate(samples, ["ARTABAN"])["ARTABAN"], 0.5)
