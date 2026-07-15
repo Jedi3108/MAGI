@@ -88,6 +88,11 @@ class ProbeReport:
     telemetry: telemetry.TelemetrySnapshot = field(
         default_factory=telemetry.TelemetrySnapshot
     )
+    # Which model actually answered for each member, plus any fallback notes.
+    # Without this the report cannot be trusted: a silently substituted model
+    # turns a multi-model run into a single-model run that reads identically.
+    models: dict[str, str] = field(default_factory=dict)
+    model_notes: list[str] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -155,6 +160,8 @@ def run_probe(
         full=full,
         samples=samples,
         telemetry=telemetry.snapshot(),
+        models=dict(getattr(engine, "models", {})),
+        model_notes=list(getattr(engine, "model_notes", [])),
     )
 
 

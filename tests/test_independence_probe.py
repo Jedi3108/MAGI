@@ -147,3 +147,17 @@ class TestBallotVocabularyMigration(unittest.TestCase):
         casts = ["SUPPORT", "ABSTAIN", "OPPOSE", "INVALID_QUESTION"]
         samples = [_s("p", i, {"ARTABAN": v}) for i, v in enumerate(casts)]
         self.assertEqual(abstain_rate(samples, ["ARTABAN"])["ARTABAN"], 0.5)
+
+
+class TestModelProvenance(unittest.TestCase):
+    """A probe report must record which model answered for each member."""
+
+    def test_report_captures_engine_model_map(self):
+        engine = MagiEngine(mock=True)
+        report = run_probe(engine, ["p1"], repetitions=1)
+        self.assertEqual(set(report.models), set(engine.models))
+
+    def test_report_captures_fallback_notes(self):
+        engine = MagiEngine(mock=True)
+        report = run_probe(engine, ["p1"], repetitions=1)
+        self.assertEqual(report.model_notes, list(engine.model_notes))

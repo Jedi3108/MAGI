@@ -167,6 +167,39 @@ def render_quarantine_causes(report: ProbeReport) -> None:
         print(f"{C.GREY}  Fix this one, then re-run and watch the abstain rate.{C.RESET}")
 
 
+def render_model_provenance(report: ProbeReport) -> None:
+    """Show which model actually answered for each member.
+
+    This is the first thing to read. A silently substituted model makes a
+    multi-model run indistinguishable from a single-model one in every figure
+    below it.
+    """
+    if not report.models:
+        return
+
+    print(f"\n{C.BOLD}COUNCIL MODELS USED{C.RESET}")
+    for member in report.members:
+        print(f"  {member:<12}-> {report.models.get(member, '?')}")
+
+    chair = report.models.get("CHAIR")
+    if chair:
+        print(f"  {'CHAIR':<12}-> {chair}")
+
+    if report.model_notes:
+        print(f"\n{C.AMBER}Model notes:{C.RESET}")
+        for note in report.model_notes:
+            print(f"{C.AMBER}  - {note}{C.RESET}")
+
+    distinct = {report.models.get(m) for m in report.members if report.models.get(m)}
+    if len(distinct) == 1:
+        print(f"\n{C.RED}All four members ran the SAME model ({distinct.pop()}).{C.RESET}")
+        print(f"{C.GREY}  This is a single-model run. Any 'independence' below is one "
+              f"model's variance,\n  not four minds. Check the fallback notes above.{C.RESET}")
+    else:
+        print(f"\n{C.GREEN}{len(distinct)} distinct models across {len(report.members)} "
+              f"members — a genuine multi-model council.{C.RESET}")
+
+
 def render_report(report: ProbeReport) -> None:
     print(f"\n{C.AMBER}{'═' * 72}{C.RESET}")
     print(f"{C.AMBER}{C.BOLD}MAGI INDEPENDENCE PROBE{C.RESET}")
@@ -175,6 +208,8 @@ def render_report(report: ProbeReport) -> None:
           f"repetitions: {report.repetitions}   "
           f"samples: {len(report.samples)}   "
           f"mode: {'full (with reflection)' if report.full else 'round-1 only'}")
+
+    render_model_provenance(report)
 
     if report.repetitions < 3:
         print(f"\n{C.AMBER}Note: with fewer than 3 repetitions, stability is not "
