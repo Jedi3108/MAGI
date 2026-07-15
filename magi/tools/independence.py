@@ -24,6 +24,7 @@ Pure stdlib. No third-party dependencies.
 from __future__ import annotations
 
 import statistics
+from collections import Counter
 from dataclasses import dataclass, field
 from itertools import combinations
 from typing import Callable, Iterable
@@ -32,6 +33,14 @@ from magi.council.members import COUNCIL
 from magi.protocol.engine import MagiEngine
 
 SUPPORT = "SUPPORT"
+OPPOSE = "OPPOSE"
+ABSTAIN = "ABSTAIN"
+INVALID_QUESTION = "INVALID_QUESTION"
+
+# Only these two express a position. ABSTAIN / INVALID_QUESTION are non-positions
+# and must never be mistaken for agreement or for a stable stance.
+DECISIVE_VOTES = frozenset({SUPPORT, OPPOSE})
+NON_POSITIONS = frozenset({ABSTAIN, INVALID_QUESTION})
 
 PHASE_ROUND1 = "round1"
 PHASE_REFLECTED = "reflected"
@@ -39,6 +48,7 @@ PHASE_REFLECTED = "reflected"
 # Thresholds used only for human-readable flags, never for control flow.
 COLLAPSE_AGREEMENT = 0.90  # a pair this aligned is effectively one voice
 NOISY_STABILITY = 0.60  # below this, single runs of that member are unreliable
+HIGH_ABSTAIN = 0.25  # above this, validation is eating ballots and metrics are unsafe
 
 DEFAULT_PROPOSITIONS = (
     "Should MAGI use different models for different council members?",
@@ -166,6 +176,62 @@ def pairwise_agreement(
     return result
 
 
+def decisive_agreement(
+    samples: list[Sample],
+    members: list[str],
+    phase: str = PHASE_ROUND1,
+) -> dict[tuple[str, str], tuple[float, int]]:
+    """Agreement measured ONLY where both members actually took a position.
+
+    `pairwise_agreement` counts ABSTAIN == ABSTAIN as agreement and
+    ABSTAIN vs OPPOSE as disagreement, so validation quarantines silently move
+    the number in both directions. Two members whose ballots were both rejected
+    are not agreeing about anything.
+
+    Returns (agreement, n) per pair. Read `n` first: a low n means the agreement
+    figure rests on very few real positions and should not be trusted.
+    """
+    result: dict[tuple[str, str], tuple[float, int]] = {}
+
+    for a, b in combinations(members, 2):
+        matches = 0
+        total = 0
+        for sample in samples:
+            votes = sample.votes(phase)
+            va, vb = votes.get(a), votes.get(b)
+            if va in DECISIVE_VOTES and vb in DECISIVE_VOTES:
+                total += 1
+                if va == vb:
+                    matches += 1
+        result[tuple(sorted((a, b)))] = (matches / total if total else 0.0, total)
+
+    return result
+
+
+def abstain_rate(
+    samples: list[Sample],
+    members: list[str],
+    phase: str = PHASE_ROUND1,
+) -> dict[str, float]:
+    """Fraction of a member's ballots that carried no position.
+
+    This is the ballot-health number. ABSTAIN is produced both by genuine
+    uncertainty and by the validation layer quarantining a rejected ballot, so a
+    high rate means the semantic validators are eating ballots — and every other
+    metric here is standing on whatever survived.
+    """
+    result: dict[str, float] = {}
+    for member in members:
+        casts = [
+            sample.votes(phase)[member]
+            for sample in samples
+            if member in sample.votes(phase)
+        ]
+        dropped = sum(1 for c in casts if c in NON_POSITIONS)
+        result[member] = dropped / len(casts) if casts else 0.0
+    return result
+
+
 def member_stability(
     samples: list[Sample],
     members: list[str],
@@ -173,9 +239,12 @@ def member_stability(
 ) -> dict[str, float]:
     """How consistently each member votes across repetitions of the SAME proposition.
 
-    For each proposition, stability = (votes for the member's majority side) / (reps).
-    Reported as the mean across propositions. 1.0 = perfectly consistent;
-    0.5 = coin flip.
+    For each proposition, stability = (casts of the member's most common vote) / (reps),
+    computed over the FULL ballot vocabulary. Reported as the mean across
+    propositions. 1.0 = perfectly consistent; 0.5 = coin flip.
+
+    Note: a member quarantined to ABSTAIN every run scores 1.00 here. Stability
+    means "consistent", not "healthy" — always read it next to the abstain rate.
     """
     result: dict[str, float] = {}
 
@@ -191,9 +260,8 @@ def member_stability(
         for (prop, mem), casts in by_prop.items():
             if mem != member or not casts:
                 continue
-            aff = sum(1 for c in casts if c == SUPPORT)
-            neg = len(casts) - aff
-            per_prop_scores.append(max(aff, neg) / len(casts))
+            modal = Counter(casts).most_common(1)[0][1]
+            per_prop_scores.append(modal / len(casts))
         result[member] = statistics.mean(per_prop_scores) if per_prop_scores else 0.0
 
     return result
