@@ -267,16 +267,39 @@ def _direct_action_consequence(text: str) -> str | None:
     return None
 
 
+# The phrase-level polarity checker sees surface phrases, not negation or syntax.
+# It reads "preserving minority reports would undermine judgment" as SUPPORT-polarity
+# because it matches "preserving minority reports", and quarantined ARTABAN's coherent
+# OPPOSE ballot on exactly that. The model-side semantic_check is the meaning-level
+# veto; this stays as a warning signal only. Tests or the engine may install a sink
+# to observe what it would have flagged.
+_polarity_warning_sink = None
+
+
+def set_polarity_warning_sink(sink) -> None:
+    """Install a callable(field_name, vote, text) to observe polarity flags.
+
+    Passing None disables observation. The check never raises regardless.
+    """
+    global _polarity_warning_sink
+    _polarity_warning_sink = sink
+
+
+def _record_polarity_warning(field_name: str, vote: str, text: str) -> None:
+    if _polarity_warning_sink is not None:
+        try:
+            _polarity_warning_sink(field_name, vote, text)
+        except Exception:
+            pass
+
+
 def _validate_vote_polarity(vote: str, text: str, field_name: str) -> None:
+    # Demoted from hard veto to warning: record, never raise.
     if vote == OPPOSE and _contains_support_polarity(text):
-        raise ValueError(
-            f"OPPOSE {field_name} contains SUPPORT-polarity language: {text!r}"
-        )
+        _record_polarity_warning(field_name, vote, text)
 
     if vote == SUPPORT and _contains_oppose_polarity(text):
-        raise ValueError(
-            f"SUPPORT {field_name} contains OPPOSE-polarity language: {text!r}"
-        )
+        _record_polarity_warning(field_name, vote, text)
 
 
 def _clean_vote_reason_alignment(
@@ -374,27 +397,36 @@ def _clean_vote_reason_alignment(
 
 
 
-def _clean_reason_like_field(vote: str, value: object, field_name: str) -> str:
+def _clean_reason_like_field(
+    vote: str,
+    value: object,
+    field_name: str,
+    check_inaction: bool = True,
+) -> str:
     text = str(value or "").strip()
 
     if not text:
         raise ValueError(f"{field_name} must not be empty.")
 
-    if vote in DECISIVE_VOTES and _contains_inaction_language(text):
+    # main_risk describes a failure mode, and a failure mode is *inherently* about
+    # what goes wrong if the action is not taken ("the risk is dissent is lost if
+    # we don't preserve it"). Running the inaction veto there is a category error —
+    # it kills correct risk statements for doing their job. It became the joint top
+    # ballot-killer (main_risk: 20 failures) after the polarity demotion. The veto
+    # stays on core_reason, where "OPPOSE because if we don't act, disaster" is a
+    # genuine vote inversion. The structured causal fields (action_causality,
+    # counterfactual_comparison) remain the primary catchers of that inversion.
+    if check_inaction and vote in DECISIVE_VOTES and _contains_inaction_language(text):
         raise ValueError(
             f"{field_name} must support the vote using the target action, "
             f"not delay/inaction language: {text!r}"
         )
 
     if vote == OPPOSE and _contains_support_polarity(text):
-        raise ValueError(
-            f"OPPOSE {field_name} contains SUPPORT-polarity language: {text!r}"
-        )
+        _record_polarity_warning(field_name, vote, text)
 
     if vote == SUPPORT and _contains_oppose_polarity(text):
-        raise ValueError(
-            f"SUPPORT {field_name} contains OPPOSE-polarity language: {text!r}"
-        )
+        _record_polarity_warning(field_name, vote, text)
 
     return text
 
@@ -460,17 +492,13 @@ def _clean_action_causality(vote: str, value: object) -> str:
                     )
 
                 if _contains_support_polarity(body):
-                    raise ValueError(
-                        f"OPPOSE action_causality contains SUPPORT-polarity language: {text!r}"
-                    )
+                    _record_polarity_warning("action_causality", vote, text)
 
                 return expected + " " + body
 
             if vote == SUPPORT:
                 if _contains_oppose_polarity(body):
-                    raise ValueError(
-                        f"SUPPORT action_causality contains OPPOSE-polarity language: {text!r}"
-                    )
+                    _record_polarity_warning("action_causality", vote, text)
 
                 return expected + " " + body
 
@@ -625,6 +653,7 @@ def parse_verdict(member: CouncilMember, raw: str, model: str) -> Verdict:
                 None,
             ),
             "main_risk",
+            check_inaction=False,
         ),
         question_for=question_for,
         question=question,
