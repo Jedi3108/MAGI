@@ -108,6 +108,16 @@ def main() -> None:
         )
         sys.exit(1)
 
+    ireul = result.get("ireul", {})
+    if ireul.get("adversarial"):
+        print(f"\n{C.RED}{'═' * 72}{C.RESET}")
+        print(f"{C.RED}{C.BOLD}IREUL ALERT :: PROPOSITION FLAGGED{C.RESET}")
+        print(f"{C.RED}{ireul.get('summary', '')}{C.RESET}")
+        print(f"{C.GREY}categories: {', '.join(ireul.get('categories', []))}{C.RESET}")
+        print(f"{C.GREY}The council judged a neutralized form; embedded commands were "
+              f"stripped of authority.{C.RESET}")
+        print(f"{C.RED}{'═' * 72}{C.RESET}")
+
     render_verdicts(result["verdicts"])
     render_cross_examination(result["answers"])
     render_satisfaction_evaluations(result["evaluations"])

@@ -10,6 +10,7 @@ from magi.chair.record import build_structured_chair_record
 from magi.council.members import CHAIR_SAMPLING, COUNCIL, CouncilMember
 from magi.council.verdict import ABSTAIN, INVALID_QUESTION, NO_CONSENSUS, OPPOSE, SUPPORT, Verdict, parse_verdict
 from magi.tools import telemetry
+from magi.protocol.ireul import neutralized_proposition, scan_proposition
 from magi.protocol.gravity import (
     ROUTINE,
     gravity_threshold_note,
@@ -1239,24 +1240,32 @@ class MagiEngine:
         simple majority, SERIOUS forbids dissent, GRAVE requires the whole council.
         """
         stakes = normalize_stakes(stakes)
+
+        # Ireul: scan the proposition for structural manipulation before the
+        # council sees it. If adversarial, members judge a neutralized form and
+        # the attempt is named in the record rather than hidden.
+        ireul_report = scan_proposition(proposition)
+        working_proposition = neutralized_proposition(proposition, ireul_report)
+        if ireul_report.is_adversarial:
+            self._progress("Ireul — manipulation detected in proposition")
         self._progress("Round 1/5 — independent analysis")
-        verdicts = self.independent_analysis(proposition)
+        verdicts = self.independent_analysis(working_proposition)
 
         self._progress("Round 2/5 — cross-examination")
         questions, answers = self.cross_examination(
-            proposition=proposition,
+            proposition=working_proposition,
             verdicts=verdicts,
         )
 
         self._progress("Round 3/5 — satisfaction evaluation")
         evaluations = self.satisfaction_evaluation(
-            proposition=proposition,
+            proposition=working_proposition,
             answers=answers,
         )
 
         self._progress("Round 4/5 — reflection")
         reflections = self.reflection_round(
-            proposition=proposition,
+            proposition=working_proposition,
             verdicts=verdicts,
             answers=answers,
             evaluations=evaluations,
@@ -1267,7 +1276,7 @@ class MagiEngine:
 
         self._progress("Round 5/5 — chair dossier")
         dossier = self.chair_dossier(
-            proposition=proposition,
+            proposition=working_proposition,
             verdicts=verdicts,
             answers=answers,
             evaluations=evaluations,
@@ -1278,6 +1287,11 @@ class MagiEngine:
         return {
             "proposition": proposition,
             "stakes": stakes,
+            "ireul": {
+                "adversarial": ireul_report.is_adversarial,
+                "categories": sorted(ireul_report.categories),
+                "summary": ireul_report.summary(),
+            },
             "verdicts": verdicts,
             "questions": questions,
             "answers": answers,
