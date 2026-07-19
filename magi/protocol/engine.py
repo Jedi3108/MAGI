@@ -1068,12 +1068,51 @@ class MagiEngine:
             model,
         )
 
+        held_vote = reflection.vote_after == verdict.vote
+
+        # A HELD vote was already validated by the full Round-1 ballot pipeline.
+        # Reflecting on a hold naturally reads as "I learned X and my position
+        # stands" — enrichment, not a fresh directional argument — so the checker
+        # returns UNCLEAR. Freezing that discards a valid reflection (this is what
+        # left MELCHIOR and BALTHASAR frozen at 85 while CASPER, whose reason
+        # happened to be explicitly directional, passed). Accept a hold unless the
+        # reason POSITIVELY argues the opposite direction, which would be a latent
+        # inversion worth catching.
+        if held_vote:
+            opposite = (
+                "SUPPORTS_NOT_TAKING" if reflection.vote_after == SUPPORT
+                else "SUPPORTS_TAKING"
+            )
+            if relation == opposite:
+                return self._preserved_reflection(
+                    verdict,
+                    reflection,
+                    "Reflection reason argued against the held vote. "
+                    "Preserving the validated Round 1 vote.",
+                )
+            return reflection
+
+        # A CHANGED vote is a strong claim — the debate moved the member — so it
+        # must be gated: the reason has to actively support the new direction.
         if reflection.vote_after == SUPPORT and relation == "SUPPORTS_TAKING":
             return reflection
 
         if reflection.vote_after == OPPOSE and relation == "SUPPORTS_NOT_TAKING":
             return reflection
 
+        return self._preserved_reflection(
+            verdict,
+            reflection,
+            "Reflection reason did not semantically support the changed vote. "
+            "Preserving the validated Round 1 vote.",
+        )
+
+    def _preserved_reflection(
+        self,
+        verdict: Verdict,
+        reflection: Reflection,
+        reason: str,
+    ) -> Reflection:
         return Reflection(
             member_name=reflection.member_name,
             member_title=reflection.member_title,
@@ -1082,10 +1121,7 @@ class MagiEngine:
             confidence_before=reflection.confidence_before,
             confidence_after=verdict.confidence,
             learned=reflection.learned,
-            reason=(
-                "Reflection reason did not semantically support a new validated "
-                "position. Preserving the validated Round 1 vote."
-            ),
+            reason=reason,
             model=reflection.model,
             raw=reflection.raw,
         )
