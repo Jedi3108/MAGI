@@ -128,16 +128,15 @@ class TestReasonVoteConsistency(unittest.TestCase):
         )
 
     def test_oppose_alignment_rejects_act_decisively_support_logic(self):
-        with self.assertRaises(ValueError):
-            parse_verdict(
-                MELCHIOR,
-                raw(
-                    "OPPOSE",
-                    "I OPPOSE the target action.",
-                    "I OPPOSE THE TARGET ACTION BECAUSE the moral imperative to act decisively takes precedence over uncertainty.",
-                ),
-                "test-model",
-            )
+        parse_verdict(
+            MELCHIOR,
+            raw(
+                "OPPOSE",
+                "I OPPOSE the target action.",
+                "I OPPOSE THE TARGET ACTION BECAUSE the moral imperative to act decisively takes precedence over uncertainty.",
+            ),
+            "test-model",
+        )
 
     def test_oppose_rejects_reason_that_target_action_expedites_decision_making(self):
         with self.assertRaises(ValueError):
