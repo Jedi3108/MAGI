@@ -10,6 +10,12 @@ from magi.chair.record import build_structured_chair_record
 from magi.council.members import CHAIR_SAMPLING, COUNCIL, CouncilMember
 from magi.council.verdict import ABSTAIN, INVALID_QUESTION, NO_CONSENSUS, OPPOSE, SUPPORT, Verdict, parse_verdict
 from magi.tools import telemetry
+from magi.protocol.gravity import (
+    ROUTINE,
+    gravity_threshold_note,
+    normalize_stakes,
+    rule_for,
+)
 from magi.models.mock import (
     mock_answer,
     mock_chair_dossier,
@@ -1226,8 +1232,13 @@ class MagiEngine:
             fallback_split=vote_split,
         )
 
-    def deliberate(self, proposition: str) -> dict:
-        """Run the current council protocol."""
+    def deliberate(self, proposition: str, stakes: str = ROUTINE) -> dict:
+        """Run the current council protocol.
+
+        stakes raises the agreement bar (see magi.protocol.gravity): ROUTINE is a
+        simple majority, SERIOUS forbids dissent, GRAVE requires the whole council.
+        """
+        stakes = normalize_stakes(stakes)
         self._progress("Round 1/5 — independent analysis")
         verdicts = self.independent_analysis(proposition)
 
@@ -1252,7 +1263,7 @@ class MagiEngine:
         )
 
         self._progress("Decision — tallying reflected votes")
-        decision = decide_reflections(reflections)
+        decision = decide_reflections(reflections, stakes=stakes)
 
         self._progress("Round 5/5 — chair dossier")
         dossier = self.chair_dossier(
@@ -1266,6 +1277,7 @@ class MagiEngine:
 
         return {
             "proposition": proposition,
+            "stakes": stakes,
             "verdicts": verdicts,
             "questions": questions,
             "answers": answers,
@@ -1341,31 +1353,55 @@ def _decision_from_split(
     oppose: int,
     abstain: int,
     invalid_question: int,
+    stakes: str = ROUTINE,
 ) -> str:
     council_size = support + oppose + abstain + invalid_question
     decisive_total = support + oppose
     quorum = (council_size // 2) + 1 if council_size else 1
 
+    rule = rule_for(stakes)
+
     if invalid_question >= quorum:
         return INVALID_QUESTION
 
+    # Base quorum: enough members must have taken a position at all.
     if decisive_total < quorum:
         return NO_CONSENSUS
 
-    if support > oppose:
-        return SUPPORT
+    winner, winning_count = (
+        (SUPPORT, support) if support > oppose
+        else (OPPOSE, oppose) if oppose > support
+        else (NO_CONSENSUS, 0)
+    )
 
-    if oppose > support:
-        return OPPOSE
+    if winner == NO_CONSENSUS:
+        return NO_CONSENSUS
 
-    return NO_CONSENSUS
+    # --- Decision gravity: raise the bar as stakes rise. Never lower it. ---
+
+    # GRAVE: any abstention means the full council did not weigh in — block.
+    if rule.block_on_abstention and (abstain > 0 or invalid_question > 0):
+        return NO_CONSENSUS
+
+    # SERIOUS+: no dissent tolerated among members who took a position.
+    if rule.forbid_dissent and support > 0 and oppose > 0:
+        return NO_CONSENSUS
+
+    # GRAVE: the entire council must be on the winning side.
+    if rule.require_full_council_agreement and winning_count < council_size:
+        return NO_CONSENSUS
+
+    return winner
 
 
-def decide_reflections(reflections: list[Reflection]) -> dict:
+def decide_reflections(reflections: list[Reflection], stakes: str = ROUTINE) -> dict:
     support = sum(r.supports for r in reflections)
     oppose = sum(r.opposes for r in reflections)
     abstain = sum(r.abstains for r in reflections)
     invalid_question = sum(r.invalid_question for r in reflections)
+    council_size = support + oppose + abstain + invalid_question
+
+    stakes = normalize_stakes(stakes)
 
     return {
         "decision": _decision_from_split(
@@ -1373,11 +1409,14 @@ def decide_reflections(reflections: list[Reflection]) -> dict:
             oppose,
             abstain,
             invalid_question,
+            stakes=stakes,
         ),
         "support": support,
         "oppose": oppose,
         "abstain": abstain,
         "invalid_question": invalid_question,
+        "stakes": stakes,
+        "gravity_note": gravity_threshold_note(stakes, council_size),
     }
 
 

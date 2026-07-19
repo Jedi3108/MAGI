@@ -56,6 +56,8 @@ def main() -> None:
     parser.add_argument("--list-models", action="store_true", help="List installed Ollama models and exit.")
     parser.add_argument("--check-ollama", action="store_true", help="Check Ollama readiness and exit.")
     parser.add_argument("--model-map", action="store_true", help="Show effective council model assignment and exit.")
+    parser.add_argument("--stakes", default="ROUTINE", choices=["ROUTINE", "SERIOUS", "GRAVE"],
+                        help="Decision gravity: ROUTINE (majority), SERIOUS (no dissent), GRAVE (unanimity).")
     args = parser.parse_args()
 
     if args.list_models or args.check_ollama:
@@ -91,7 +93,7 @@ def main() -> None:
         if args.model_map:
             return
 
-        result = engine.deliberate(proposition)
+        result = engine.deliberate(proposition, stakes=args.stakes)
 
     except OllamaError as exc:
         print(f"{C.RED}{C.BOLD}MAGI could not run with Ollama.{C.RESET}\n")
