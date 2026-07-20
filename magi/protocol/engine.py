@@ -491,10 +491,14 @@ class MagiEngine:
         same: bool = False,
         progress: Callable[[str], None] | None = None,
         default_model: str = DEFAULT_MODEL,
+        event_sink: Callable[[dict], None] | None = None,
     ) -> None:
         self.mock = mock
         self.default_model = default_model
         self.progress = progress
+        # event_sink receives structured events for live views. Defaults to a
+        # no-op so every existing run is byte-for-byte unchanged.
+        self.event_sink = event_sink
         self.model_notes: list[str] = []
 
         self.models = self._resolve_models(model=model, same=same)
@@ -504,6 +508,17 @@ class MagiEngine:
         """Emit a progress message if a progress callback is configured."""
         if self.progress:
             self.progress(message)
+
+    def _emit(self, event: dict) -> None:
+        """Emit a structured event to the live sink, if one is configured.
+
+        Never raises into the protocol: a broken UI must not break a deliberation.
+        """
+        if self.event_sink:
+            try:
+                self.event_sink(event)
+            except Exception:
+                pass
 
     def _resolve_required_model(self, requested: str, available: list[str]) -> str:
         resolved = resolve_model_name(requested, available)
@@ -782,8 +797,20 @@ class MagiEngine:
 
     def independent_analysis(self, proposition: str) -> list[Verdict]:
         """Run independent council analysis."""
+        def _resolve(member: CouncilMember) -> Verdict:
+            self._emit({"type": "member_started", "member": member.name})
+            verdict = self._ask_member(member, proposition)
+            self._emit({
+                "type": "member_resolved",
+                "member": verdict.member_name,
+                "vote": verdict.vote,
+                "confidence": verdict.confidence,
+                "reason": verdict.core_reason,
+            })
+            return verdict
+
         with ThreadPoolExecutor(max_workers=len(COUNCIL)) as pool:
-            return list(pool.map(lambda member: self._ask_member(member, proposition), COUNCIL))
+            return list(pool.map(_resolve, COUNCIL))
 
     def _member_by_name(self, name: str) -> CouncilMember:
         for member in COUNCIL:
@@ -1241,6 +1268,14 @@ class MagiEngine:
         """
         stakes = normalize_stakes(stakes)
 
+        self._emit({
+            "type": "run_started",
+            "proposition": proposition,
+            "stakes": stakes,
+            "members": [m.name for m in COUNCIL],
+            "models": {m.name: self.models.get(m.name, "") for m in COUNCIL},
+        })
+
         # Ireul: scan the proposition for structural manipulation before the
         # council sees it. If adversarial, members judge a neutralized form and
         # the attempt is named in the record rather than hidden.
@@ -1248,33 +1283,62 @@ class MagiEngine:
         working_proposition = neutralized_proposition(proposition, ireul_report)
         if ireul_report.is_adversarial:
             self._progress("Ireul — manipulation detected in proposition")
+            self._emit({
+                "type": "ireul_alert",
+                "categories": sorted(ireul_report.categories),
+                "summary": ireul_report.summary(),
+            })
         self._progress("Round 1/5 — independent analysis")
+        self._emit({"type": "round_started", "round": 1, "name": "independent_analysis"})
         verdicts = self.independent_analysis(working_proposition)
 
         self._progress("Round 2/5 — cross-examination")
+        self._emit({"type": "round_started", "round": 2, "name": "cross_examination"})
         questions, answers = self.cross_examination(
             proposition=working_proposition,
             verdicts=verdicts,
         )
 
         self._progress("Round 3/5 — satisfaction evaluation")
+        self._emit({"type": "round_started", "round": 3, "name": "satisfaction_evaluation"})
         evaluations = self.satisfaction_evaluation(
             proposition=working_proposition,
             answers=answers,
         )
 
         self._progress("Round 4/5 — reflection")
+        self._emit({"type": "round_started", "round": 4, "name": "reflection"})
         reflections = self.reflection_round(
             proposition=working_proposition,
             verdicts=verdicts,
             answers=answers,
             evaluations=evaluations,
         )
+        for r in reflections:
+            self._emit({
+                "type": "reflection_resolved",
+                "member": r.member_name,
+                "from": r.vote_before,
+                "to": r.vote_after,
+                "confidence": r.confidence_after,
+                "reason": r.reason,
+            })
 
         self._progress("Decision — tallying reflected votes")
         decision = decide_reflections(reflections, stakes=stakes)
+        self._emit({
+            "type": "decision",
+            "decision": decision["decision"],
+            "support": decision["support"],
+            "oppose": decision["oppose"],
+            "abstain": decision["abstain"],
+            "invalid_question": decision["invalid_question"],
+            "stakes": stakes,
+            "gravity_note": decision.get("gravity_note", ""),
+        })
 
         self._progress("Round 5/5 — chair dossier")
+        self._emit({"type": "round_started", "round": 5, "name": "chair_dossier"})
         dossier = self.chair_dossier(
             proposition=working_proposition,
             verdicts=verdicts,
@@ -1283,6 +1347,8 @@ class MagiEngine:
             reflections=reflections,
             decision=decision,
         )
+
+        self._emit({"type": "run_finished", "decision": decision["decision"]})
 
         return {
             "proposition": proposition,

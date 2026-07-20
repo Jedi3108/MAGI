@@ -20,3 +20,7 @@ logs/
 traces/
 memory/local/
 models/local/
+*.patch
+magi_bridge.html
+runs_*.txt
+experiments/

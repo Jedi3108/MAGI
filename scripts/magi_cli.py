@@ -60,6 +60,10 @@ def main() -> None:
                         help="Write the NERV bridge visualization to an HTML file (default magi_bridge.html).")
     parser.add_argument("--stakes", default="ROUTINE", choices=["ROUTINE", "SERIOUS", "GRAVE"],
                         help="Decision gravity: ROUTINE (majority), SERIOUS (no dissent), GRAVE (unanimity).")
+    parser.add_argument("--live", action="store_true",
+                        help="Open a live NERV bridge in the browser and stream the deliberation as it runs.")
+    parser.add_argument("--port", type=int, default=0,
+                        help="Port for the live bridge server (default: an open port).")
     args = parser.parse_args()
 
     if args.list_models or args.check_ollama:
@@ -93,6 +97,35 @@ def main() -> None:
                 print(f"  - {note}")
 
         if args.model_map:
+            return
+
+        if args.live:
+            import time
+            import webbrowser
+            from magi.tools.live_bridge import LiveState, LIVE_BOARD_HTML, start_server
+
+            state = LiveState()
+            engine.event_sink = state.update
+            server, port = start_server(state, LIVE_BOARD_HTML, port=args.port)
+            url = f"http://127.0.0.1:{port}/"
+            print(f"\n{C.AMBER}NERV bridge live at {url}{C.RESET}")
+            webbrowser.open(url)
+            time.sleep(1.0)
+
+            result = engine.deliberate(proposition, stakes=args.stakes)
+
+            render_verdicts(result["verdicts"])
+            render_cross_examination(result["answers"])
+            render_satisfaction_evaluations(result["evaluations"])
+            render_reflections(result["reflections"])
+            render_decision(result["decision"])
+            render_dossier(result["dossier"])
+            print(f"\n{C.AMBER}Bridge still live at {url} — press Ctrl+C to exit.{C.RESET}")
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                server.shutdown()
             return
 
         result = engine.deliberate(proposition, stakes=args.stakes)
