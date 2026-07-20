@@ -160,12 +160,18 @@ def render_decision(decision: dict) -> None:
 
     print(f"\n{color}{'═' * 72}{C.RESET}")
     print(f"{color}{C.BOLD}MAGI DECISION AFTER REFLECTION :: {result}{C.RESET}")
+    stakes = decision.get("stakes")
+    if stakes and stakes != "ROUTINE":
+        print(f"{color}Stakes: {stakes}{C.RESET}")
     print(
         f"{color}Split: {decision['support']} support / "
         f"{decision['oppose']} oppose / "
         f"{decision['abstain']} abstain / "
         f"{decision['invalid_question']} invalid-question{C.RESET}"
     )
+    note = decision.get("gravity_note")
+    if note and (stakes and stakes != "ROUTINE" or result == "NO CONSENSUS"):
+        print(f"{C.GREY}{note}{C.RESET}")
     print(f"{color}{'═' * 72}{C.RESET}\n")
 
 

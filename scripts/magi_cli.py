@@ -56,6 +56,8 @@ def main() -> None:
     parser.add_argument("--list-models", action="store_true", help="List installed Ollama models and exit.")
     parser.add_argument("--check-ollama", action="store_true", help="Check Ollama readiness and exit.")
     parser.add_argument("--model-map", action="store_true", help="Show effective council model assignment and exit.")
+    parser.add_argument("--bridge", nargs="?", const="magi_bridge.html", default=None,
+                        help="Write the NERV bridge visualization to an HTML file (default magi_bridge.html).")
     parser.add_argument("--stakes", default="ROUTINE", choices=["ROUTINE", "SERIOUS", "GRAVE"],
                         help="Decision gravity: ROUTINE (majority), SERIOUS (no dissent), GRAVE (unanimity).")
     args = parser.parse_args()
@@ -124,6 +126,11 @@ def main() -> None:
     render_reflections(result["reflections"])
     render_decision(result["decision"])
     render_dossier(result["dossier"])
+
+    if args.bridge:
+        from magi.tools.nerv_bridge import write_bridge
+        out = write_bridge(result, args.bridge)
+        print(f"\n{C.AMBER}NERV bridge written to {out}{C.RESET}")
 
 
 if __name__ == "__main__":
